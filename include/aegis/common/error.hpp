@@ -29,6 +29,10 @@ enum class ErrorCode : std::uint16_t {
     ValueOutOfRange = 3,
     InvalidSessionLength = 4,
     InvalidSessionCharacter = 5,
+    InvalidItchLength = 6,
+    UnexpectedItchType = 7,
+    InvalidItchEnum = 8,
+    InvalidItchAscii = 9,
 };
 
 struct Error {
@@ -40,6 +44,8 @@ struct Error {
     std::uint64_t observed_value{0};
     std::uint64_t limit_value{0};
     std::string_view message{};
+    std::uint64_t sequence{0};
+    std::uint8_t message_type{0};
 
     [[nodiscard]] static constexpr Error read_past_end(
         const std::size_t offset,
@@ -121,6 +127,85 @@ struct Error {
             observed_character,
             0x7E,
             "session text contains a non-printable ASCII character",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_itch_length(
+        const std::size_t expected_size,
+        const std::size_t observed_size,
+        const std::uint64_t sequence,
+        const std::uint8_t message_type) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::InvalidItchLength,
+            0,
+            expected_size,
+            observed_size,
+            observed_size,
+            expected_size,
+            "ITCH payload length does not match message type",
+            sequence,
+            message_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error unexpected_itch_type(
+        const std::uint8_t expected_type,
+        const std::uint8_t observed_type,
+        const std::uint64_t sequence) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::UnexpectedItchType,
+            0,
+            1,
+            1,
+            observed_type,
+            expected_type,
+            "unexpected ITCH message type",
+            sequence,
+            observed_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_itch_enum(
+        const std::size_t offset,
+        const std::uint8_t observed_value,
+        const std::uint64_t sequence,
+        const std::uint8_t message_type) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::InvalidItchEnum,
+            offset,
+            1,
+            1,
+            observed_value,
+            0,
+            "invalid ITCH enum value",
+            sequence,
+            message_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_itch_ascii(
+        const std::size_t offset,
+        const std::uint8_t observed_value,
+        const std::uint64_t sequence,
+        const std::uint8_t message_type) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::InvalidItchAscii,
+            offset,
+            1,
+            1,
+            observed_value,
+            0x7E,
+            "ITCH alpha field contains non-printable ASCII",
+            sequence,
+            message_type,
         };
     }
 };

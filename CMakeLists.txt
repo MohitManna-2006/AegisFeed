@@ -17,7 +17,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(aegis_core STATIC src/common/core.cpp)
+add_library(
+    aegis_core STATIC
+    src/common/core.cpp
+    src/itch/itch_decoder.cpp
+)
 add_library(AegisFeed::core ALIAS aegis_core)
 
 target_compile_features(aegis_core PUBLIC cxx_std_20)
@@ -82,4 +86,11 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_itch_types_test)
 
     add_test(NAME aegis.itch_types COMMAND aegis_itch_types_test)
+
+    add_executable(aegis_itch_decoder_test tests/unit/itch_decoder_test.cpp)
+    target_link_libraries(aegis_itch_decoder_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_itch_decoder_test)
+    aegis_enable_sanitizers(aegis_itch_decoder_test)
+
+    add_test(NAME aegis.itch_decoder COMMAND aegis_itch_decoder_test)
 endif()
