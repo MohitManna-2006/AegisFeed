@@ -26,6 +26,10 @@ public:
 
     [[nodiscard]] Result<void> observe(const StockDirectory& directory);
     [[nodiscard]] Result<BookRouteStatus> add(const AddOrder& message);
+    [[nodiscard]] Result<BookRouteStatus> execute(const OrderExecuted& message);
+    [[nodiscard]] Result<BookRouteStatus> execute_with_price(
+        const OrderExecutedWithPrice& message);
+    [[nodiscard]] Result<BookRouteStatus> cancel(const OrderCancel& message);
 
     [[nodiscard]] std::size_t book_count() const noexcept;
     [[nodiscard]] bool has_book(StockLocate stock_locate) const noexcept;
@@ -38,6 +42,8 @@ private:
     BookStore(
         SymbolDirectory symbol_directory,
         std::size_t expected_active_order_capacity_per_book);
+
+    [[nodiscard]] Result<OrderBook*> resolve_book(StockLocate stock_locate);
 
     SymbolDirectory symbol_directory_;
     BooksByLocate books_by_locate_{};

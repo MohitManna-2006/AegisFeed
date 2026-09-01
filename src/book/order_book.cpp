@@ -227,6 +227,128 @@ Result<void> OrderBook::add(const AddOrder& message)
     return Result<void>::success();
 }
 
+Result<void> OrderBook::execute(const OrderExecuted& message)
+{
+    return reduce(
+        message.header.stock_locate,
+        message.order_reference,
+        message.executed_shares,
+        ReductionKind::Execution);
+}
+
+Result<void> OrderBook::execute_with_price(const OrderExecutedWithPrice& message)
+{
+    return reduce(
+        message.header.stock_locate,
+        message.order_reference,
+        message.executed_shares,
+        ReductionKind::Execution);
+}
+
+Result<void> OrderBook::cancel(const OrderCancel& message)
+{
+    return reduce(
+        message.header.stock_locate,
+        message.order_reference,
+        message.cancelled_shares,
+        ReductionKind::Cancel);
+}
+
+Result<void> OrderBook::reduce(
+    const StockLocate stock_locate,
+    const OrderId order_reference,
+    const Shares shares,
+    const ReductionKind kind)
+{
+    if (stock_locate != stock_locate_) {
+        return Result<void>::failure(Error::invalid_order_reduction(
+            "order reduction stock locate does not match containing book",
+            stock_locate,
+            stock_locate_));
+    }
+    if (shares == 0) {
+        return Result<void>::failure(Error::invalid_order_reduction(
+            "order reduction must have positive shares", shares, 1));
+    }
+
+    const auto active_order = active_orders_.find(order_reference);
+    if (active_order == active_orders_.end()) {
+        return Result<void>::failure(Error::unknown_order_reference(order_reference));
+    }
+    if (active_order->second.id != order_reference) {
+        return invariant_failure("active-order key does not match order record id");
+    }
+    if (active_order->second.stock_locate != stock_locate_) {
+        return invariant_failure(
+            "active order stock locate does not match containing book",
+            active_order->second.stock_locate,
+            stock_locate_);
+    }
+    if (active_order->second.remaining == 0) {
+        return invariant_failure("active order has zero remaining shares");
+    }
+    if (shares > active_order->second.remaining) {
+        const auto error = kind == ReductionKind::Execution
+                               ? Error::over_execution(shares, active_order->second.remaining)
+                               : Error::over_cancel(shares, active_order->second.remaining);
+        return Result<void>::failure(error);
+    }
+
+    const auto reduce_from_side = [&](auto& levels) -> Result<void> {
+        const auto level = levels.find(active_order->second.price);
+        if (level == levels.end()) {
+            return invariant_failure("active order has no resting price level");
+        }
+        if (level->second.order_count == 0) {
+            return invariant_failure("resting price level has zero orders");
+        }
+        if (level->second.aggregate_shares < static_cast<std::uint64_t>(shares)) {
+            return invariant_failure(
+                "resting price level has insufficient aggregate shares",
+                level->second.aggregate_shares,
+                shares);
+        }
+
+        const bool removes_order = shares == active_order->second.remaining;
+        const auto remaining_level_shares =
+            level->second.aggregate_shares - static_cast<std::uint64_t>(shares);
+        if (removes_order) {
+            const bool level_becomes_empty = level->second.order_count == 1;
+            if (level_becomes_empty != (remaining_level_shares == 0)) {
+                return invariant_failure(
+                    "resting price-level count and aggregate disagree on full removal",
+                    level->second.order_count,
+                    remaining_level_shares);
+            }
+        } else if (remaining_level_shares == 0) {
+            return invariant_failure(
+                "partial reduction would leave an active zero-share price level");
+        }
+
+        level->second.aggregate_shares = remaining_level_shares;
+        if (!removes_order) {
+            active_order->second.remaining -= shares;
+        } else {
+            --level->second.order_count;
+            active_orders_.erase(active_order);
+            if (level->second.order_count == 0) {
+                levels.erase(level);
+            }
+        }
+
+        debug_validate_invariants();
+        return Result<void>::success();
+    };
+
+    if (active_order->second.side == Side::Buy) {
+        return reduce_from_side(bids_);
+    }
+    if (active_order->second.side == Side::Sell) {
+        return reduce_from_side(asks_);
+    }
+    return invariant_failure("active order has an invalid side");
+}
+
 Result<void> OrderBook::validate_invariants() const noexcept
 {
     const auto bid_result = validate_levels(bids_, active_orders_, Side::Buy);

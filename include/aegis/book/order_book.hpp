@@ -51,11 +51,26 @@ public:
     [[nodiscard]] std::optional<PriceLevel> ask_level(Price4 price) const noexcept;
 
     [[nodiscard]] Result<void> add(const AddOrder& message);
+    [[nodiscard]] Result<void> execute(const OrderExecuted& message);
+    [[nodiscard]] Result<void> execute_with_price(
+        const OrderExecutedWithPrice& message);
+    [[nodiscard]] Result<void> cancel(const OrderCancel& message);
 
     [[nodiscard]] Result<void> validate_invariants() const noexcept;
 
 private:
     using ActiveOrders = std::unordered_map<OrderId, OrderRecord>;
+
+    enum class ReductionKind : std::uint8_t {
+        Execution,
+        Cancel,
+    };
+
+    [[nodiscard]] Result<void> reduce(
+        StockLocate stock_locate,
+        OrderId order_reference,
+        Shares shares,
+        ReductionKind kind);
 
     void debug_validate_invariants() const noexcept;
 

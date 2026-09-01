@@ -50,25 +50,88 @@ Result<void> BookStore::observe(const StockDirectory& directory)
 
 Result<BookRouteStatus> BookStore::add(const AddOrder& message)
 {
-    const auto stock_locate = static_cast<StockLocate>(message.header.stock_locate);
-    if (!symbol_directory_.is_known(stock_locate)) {
-        return Result<BookRouteStatus>::failure(Error::unknown_stock_locate(stock_locate));
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
     }
-    if (!symbol_directory_.is_selected(stock_locate)) {
+    if (*selected_book.value() == nullptr) {
         return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
     }
 
-    const auto selected_book = books_by_locate_.find(stock_locate);
-    if (selected_book == books_by_locate_.end()) {
-        return Result<BookRouteStatus>::failure(Error::book_invariant_violation(
-            "selected stock locate has no owned order book", stock_locate, 0));
-    }
-
-    const auto result = selected_book->second.add(message);
+    const auto result = (*selected_book.value())->add(message);
     if (!result) {
         return Result<BookRouteStatus>::failure(*result.error());
     }
     return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
+Result<BookRouteStatus> BookStore::execute(const OrderExecuted& message)
+{
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
+    }
+    if (*selected_book.value() == nullptr) {
+        return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
+    }
+
+    const auto result = (*selected_book.value())->execute(message);
+    if (!result) {
+        return Result<BookRouteStatus>::failure(*result.error());
+    }
+    return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
+Result<BookRouteStatus> BookStore::execute_with_price(
+    const OrderExecutedWithPrice& message)
+{
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
+    }
+    if (*selected_book.value() == nullptr) {
+        return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
+    }
+
+    const auto result = (*selected_book.value())->execute_with_price(message);
+    if (!result) {
+        return Result<BookRouteStatus>::failure(*result.error());
+    }
+    return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
+Result<BookRouteStatus> BookStore::cancel(const OrderCancel& message)
+{
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
+    }
+    if (*selected_book.value() == nullptr) {
+        return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
+    }
+
+    const auto result = (*selected_book.value())->cancel(message);
+    if (!result) {
+        return Result<BookRouteStatus>::failure(*result.error());
+    }
+    return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
+Result<OrderBook*> BookStore::resolve_book(const StockLocate stock_locate)
+{
+    if (!symbol_directory_.is_known(stock_locate)) {
+        return Result<OrderBook*>::failure(Error::unknown_stock_locate(stock_locate));
+    }
+    if (!symbol_directory_.is_selected(stock_locate)) {
+        return Result<OrderBook*>::success(nullptr);
+    }
+
+    const auto selected_book = books_by_locate_.find(stock_locate);
+    if (selected_book == books_by_locate_.end()) {
+        return Result<OrderBook*>::failure(Error::book_invariant_violation(
+            "selected stock locate has no owned order book", stock_locate, 0));
+    }
+    return Result<OrderBook*>::success(&selected_book->second);
 }
 
 std::size_t BookStore::book_count() const noexcept

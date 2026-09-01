@@ -44,6 +44,10 @@ enum class ErrorCode : std::uint16_t {
     BookArithmeticOverflow = 18,
     ConflictingSelectedSymbolLocate = 19,
     UnknownStockLocate = 20,
+    InvalidOrderReduction = 21,
+    UnknownOrderReference = 22,
+    OverExecution = 23,
+    OverCancel = 24,
 };
 
 struct Error {
@@ -400,6 +404,70 @@ struct Error {
             stock_locate,
             0,
             "order event references an unknown stock locate",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_order_reduction(
+        const std::string_view reason,
+        const std::uint64_t observed_value = 0,
+        const std::uint64_t limit_value = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::InvalidOrderReduction,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error unknown_order_reference(
+        const std::uint64_t order_reference) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::UnknownOrderReference,
+            0,
+            0,
+            0,
+            order_reference,
+            0,
+            "order reduction references an inactive order",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error over_execution(
+        const std::uint64_t executed_shares,
+        const std::uint64_t remaining_shares) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::OverExecution,
+            0,
+            0,
+            0,
+            executed_shares,
+            remaining_shares,
+            "executed shares exceed remaining order shares",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error over_cancel(
+        const std::uint64_t cancelled_shares,
+        const std::uint64_t remaining_shares) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::OverCancel,
+            0,
+            0,
+            0,
+            cancelled_shares,
+            remaining_shares,
+            "cancelled shares exceed remaining order shares",
         };
     }
 };
