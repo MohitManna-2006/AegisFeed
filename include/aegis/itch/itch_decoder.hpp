@@ -21,4 +21,12 @@ struct ItchDecodeContext {
     std::span<const std::byte> payload,
     ItchDecodeContext context = {}) noexcept;
 
+[[nodiscard]] Result<AddOrder> decode_add_order(
+    std::span<const std::byte> payload,
+    ItchDecodeContext context = {}) noexcept;
+
+[[nodiscard]] Result<AddOrder> decode_add_order_with_attribution(
+    std::span<const std::byte> payload,
+    ItchDecodeContext context = {}) noexcept;
+
 }  // namespace aegis

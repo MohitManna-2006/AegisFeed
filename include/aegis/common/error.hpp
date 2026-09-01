@@ -33,6 +33,7 @@ enum class ErrorCode : std::uint16_t {
     UnexpectedItchType = 7,
     InvalidItchEnum = 8,
     InvalidItchAscii = 9,
+    InvalidItchValue = 10,
 };
 
 struct Error {
@@ -204,6 +205,27 @@ struct Error {
             observed_value,
             0x7E,
             "ITCH alpha field contains non-printable ASCII",
+            sequence,
+            message_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_itch_value(
+        const std::size_t offset,
+        const std::uint64_t observed_value,
+        const std::uint64_t limit_value,
+        const std::uint64_t sequence,
+        const std::uint8_t message_type) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::InvalidItchValue,
+            offset,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            "ITCH value exceeds permitted range",
             sequence,
             message_type,
         };

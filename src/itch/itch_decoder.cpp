@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace aegis {
@@ -56,6 +57,11 @@ public:
     [[nodiscard]] bool read_u48_be(std::uint64_t& destination) noexcept
     {
         return take(reader_.read_u48_be(), destination);
+    }
+
+    [[nodiscard]] bool read_u64_be(std::uint64_t& destination) noexcept
+    {
+        return take(reader_.read_u64_be(), destination);
     }
 
     [[nodiscard]] bool read_bytes(
@@ -144,6 +150,11 @@ private:
     default:
         return false;
     }
+}
+
+[[nodiscard]] constexpr bool is_valid_side(const std::uint8_t value) noexcept
+{
+    return value == enum_value(Side::Buy) || value == enum_value(Side::Sell);
 }
 
 [[nodiscard]] constexpr bool is_valid_market_category(const std::uint8_t value) noexcept
@@ -330,6 +341,68 @@ template <std::size_t Size>
     return true;
 }
 
+[[nodiscard]] Result<AddOrder> decode_add_order_fields(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context,
+    const std::uint8_t message_type,
+    const std::size_t expected_size,
+    const bool has_attribution) noexcept
+{
+    ItchReadCursor reader{payload, context, message_type, expected_size};
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<AddOrder>::failure(*header_result.error());
+    }
+
+    std::uint64_t order_reference{};
+    Side side{};
+    std::uint32_t shares{};
+    StockSymbol stock{};
+    Price4 price_1e4{};
+    Error error{};
+    if (!reader.read_u64_be(order_reference) ||
+        !read_enum_field(
+            reader, 19, context, message_type, is_valid_side, side, error) ||
+        !reader.read_u32_be(shares) ||
+        !read_ascii_field(reader, 24, context, message_type, stock, error) ||
+        !reader.read_u32_be(price_1e4)) {
+        if (error.code == ErrorCode::None) {
+            error = reader.error();
+        }
+        return Result<AddOrder>::failure(error);
+    }
+
+    if (price_1e4 > kMaxPrice4) {
+        return Result<AddOrder>::failure(Error::invalid_itch_value(
+            32, price_1e4, kMaxPrice4, context.sequence, message_type));
+    }
+
+    std::optional<Attribution> attribution{};
+    if (has_attribution) {
+        Attribution decoded_attribution{};
+        if (!read_ascii_field(
+                reader,
+                36,
+                context,
+                message_type,
+                decoded_attribution,
+                error)) {
+            return Result<AddOrder>::failure(error);
+        }
+        attribution = decoded_attribution;
+    }
+
+    return Result<AddOrder>::success(AddOrder{
+        *header_result.value(),
+        order_reference,
+        side,
+        shares,
+        stock,
+        price_1e4,
+        attribution,
+    });
+}
+
 }  // namespace
 
 Result<SystemEvent> decode_system_event(
@@ -479,6 +552,37 @@ Result<StockDirectory> decode_stock_directory(
         etp_leverage_factor,
         inverse_indicator,
     });
+}
+
+Result<AddOrder> decode_add_order(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('A');
+    if (payload.size() != kAddOrderLength) {
+        return Result<AddOrder>::failure(Error::invalid_itch_length(
+            kAddOrderLength, payload.size(), context.sequence, message_type));
+    }
+
+    return decode_add_order_fields(
+        payload, context, message_type, kAddOrderLength, false);
+}
+
+Result<AddOrder> decode_add_order_with_attribution(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('F');
+    if (payload.size() != kAddOrderWithAttributionLength) {
+        return Result<AddOrder>::failure(Error::invalid_itch_length(
+            kAddOrderWithAttributionLength,
+            payload.size(),
+            context.sequence,
+            message_type));
+    }
+
+    return decode_add_order_fields(
+        payload, context, message_type, kAddOrderWithAttributionLength, true);
 }
 
 }  // namespace aegis
