@@ -54,4 +54,10 @@ if(BUILD_TESTING)
     aegis_enable_compiler_warnings(aegis_byte_writer_test)
 
     add_test(NAME aegis.byte_writer COMMAND aegis_byte_writer_test)
+
+    add_executable(aegis_mold_session_test tests/unit/mold_session_test.cpp)
+    target_link_libraries(aegis_mold_session_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_mold_session_test)
+
+    add_test(NAME aegis.mold_session COMMAND aegis_mold_session_test)
 endif()

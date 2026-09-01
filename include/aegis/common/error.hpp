@@ -27,6 +27,8 @@ enum class ErrorCode : std::uint16_t {
     ReadPastEnd = 1,
     WritePastEnd = 2,
     ValueOutOfRange = 3,
+    InvalidSessionLength = 4,
+    InvalidSessionCharacter = 5,
 };
 
 struct Error {
@@ -87,6 +89,38 @@ struct Error {
             observed_value,
             limit_value,
             "value does not fit field width",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_session_length(
+        const std::size_t observed_length,
+        const std::size_t maximum_length) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::InvalidSessionLength,
+            0,
+            observed_length,
+            maximum_length,
+            observed_length,
+            maximum_length,
+            "session text must contain 1 to 10 printable ASCII characters",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_session_character(
+        const std::size_t offset,
+        const std::uint8_t observed_character) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::InvalidSessionCharacter,
+            offset,
+            1,
+            1,
+            observed_character,
+            0x7E,
+            "session text contains a non-printable ASCII character",
         };
     }
 };
