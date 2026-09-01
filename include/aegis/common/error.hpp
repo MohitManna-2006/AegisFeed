@@ -36,6 +36,9 @@ enum class ErrorCode : std::uint16_t {
     InvalidItchValue = 10,
     UnknownItchType = 11,
     BookInvariantViolation = 12,
+    InvalidRequestedSymbol = 13,
+    InvalidStockSymbol = 14,
+    ConflictingStockLocate = 15,
 };
 
 struct Error {
@@ -265,6 +268,53 @@ struct Error {
             observed_value,
             limit_value,
             reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_requested_symbol(
+        const std::string_view reason,
+        const std::size_t observed_size = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::Configuration,
+            ErrorCode::InvalidRequestedSymbol,
+            0,
+            observed_size,
+            8,
+            observed_size,
+            8,
+            reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_stock_symbol(
+        const std::string_view reason,
+        const std::size_t offset = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::InvalidStockSymbol,
+            offset,
+            1,
+            8,
+            0,
+            0,
+            reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error conflicting_stock_locate(
+        const std::uint16_t stock_locate) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::ConflictingStockLocate,
+            0,
+            0,
+            0,
+            stock_locate,
+            stock_locate,
+            "stock locate is already mapped to a different symbol",
         };
     }
 };

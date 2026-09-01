@@ -20,6 +20,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(
     aegis_core STATIC
     src/book/order_book.cpp
+    src/book/symbol_directory.cpp
     src/common/core.cpp
     src/itch/itch_decoder.cpp
 )
@@ -101,4 +102,14 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_order_book_test)
 
     add_test(NAME aegis.order_book COMMAND aegis_order_book_test)
+
+    add_executable(
+        aegis_symbol_directory_test
+        tests/unit/symbol_directory_test.cpp
+    )
+    target_link_libraries(aegis_symbol_directory_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_symbol_directory_test)
+    aegis_enable_sanitizers(aegis_symbol_directory_test)
+
+    add_test(NAME aegis.symbol_directory COMMAND aegis_symbol_directory_test)
 endif()
