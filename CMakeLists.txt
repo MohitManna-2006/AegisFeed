@@ -75,4 +75,11 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_unique_fd_test)
 
     add_test(NAME aegis.unique_fd COMMAND aegis_unique_fd_test)
+
+    add_executable(aegis_itch_types_test tests/unit/itch_types_test.cpp)
+    target_link_libraries(aegis_itch_types_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_itch_types_test)
+    aegis_enable_sanitizers(aegis_itch_types_test)
+
+    add_test(NAME aegis.itch_types COMMAND aegis_itch_types_test)
 endif()
