@@ -35,6 +35,7 @@ enum class ErrorCode : std::uint16_t {
     InvalidItchAscii = 9,
     InvalidItchValue = 10,
     UnknownItchType = 11,
+    BookInvariantViolation = 12,
 };
 
 struct Error {
@@ -247,6 +248,23 @@ struct Error {
             "ITCH value exceeds permitted range",
             sequence,
             message_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error book_invariant_violation(
+        const std::string_view reason,
+        const std::uint64_t observed_value = 0,
+        const std::uint64_t limit_value = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::BookInvariantViolation,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
         };
     }
 };

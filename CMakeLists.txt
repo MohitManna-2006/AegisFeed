@@ -19,6 +19,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(
     aegis_core STATIC
+    src/book/order_book.cpp
     src/common/core.cpp
     src/itch/itch_decoder.cpp
 )
@@ -93,4 +94,11 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_itch_decoder_test)
 
     add_test(NAME aegis.itch_decoder COMMAND aegis_itch_decoder_test)
+
+    add_executable(aegis_order_book_test tests/unit/order_book_test.cpp)
+    target_link_libraries(aegis_order_book_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_order_book_test)
+    aegis_enable_sanitizers(aegis_order_book_test)
+
+    add_test(NAME aegis.order_book COMMAND aegis_order_book_test)
 endif()
