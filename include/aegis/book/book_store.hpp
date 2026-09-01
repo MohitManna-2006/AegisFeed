@@ -30,6 +30,8 @@ public:
     [[nodiscard]] Result<BookRouteStatus> execute_with_price(
         const OrderExecutedWithPrice& message);
     [[nodiscard]] Result<BookRouteStatus> cancel(const OrderCancel& message);
+    [[nodiscard]] Result<BookRouteStatus> delete_order(const OrderDelete& message);
+    [[nodiscard]] Result<BookRouteStatus> replace(const OrderReplace& message);
 
     [[nodiscard]] std::size_t book_count() const noexcept;
     [[nodiscard]] bool has_book(StockLocate stock_locate) const noexcept;

@@ -53,6 +53,8 @@ static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderReduction
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::UnknownOrderReference) == 22);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::OverExecution) == 23);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::OverCancel) == 24);
+static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderDelete) == 25);
+static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderReplace) == 26);
 static_assert(
     std::is_same_v<decltype(std::declval<aegis::OrderBook&>().execute(
                        std::declval<const aegis::OrderExecuted&>())),
@@ -64,6 +66,14 @@ static_assert(
 static_assert(
     std::is_same_v<decltype(std::declval<aegis::OrderBook&>().cancel(
                        std::declval<const aegis::OrderCancel&>())),
+                   aegis::Result<void>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<aegis::OrderBook&>().delete_order(
+                       std::declval<const aegis::OrderDelete&>())),
+                   aegis::Result<void>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<aegis::OrderBook&>().replace(
+                       std::declval<const aegis::OrderReplace&>())),
                    aegis::Result<void>>);
 
 std::size_t failure_count = 0;
@@ -140,6 +150,34 @@ void check(const bool condition, const std::string_view expression, const int li
     message.header.stock_locate = stock_locate;
     message.order_reference = order_id;
     message.cancelled_shares = shares;
+    return message;
+}
+
+[[nodiscard]] aegis::OrderDelete deletion(
+    const aegis::OrderId order_id,
+    const aegis::StockLocate stock_locate)
+{
+    aegis::OrderDelete message{};
+    message.header.type = 'D';
+    message.header.stock_locate = stock_locate;
+    message.order_reference = order_id;
+    return message;
+}
+
+[[nodiscard]] aegis::OrderReplace replacement(
+    const aegis::OrderId original_order_id,
+    const aegis::OrderId new_order_id,
+    const aegis::StockLocate stock_locate,
+    const aegis::Shares shares,
+    const aegis::Price4 price)
+{
+    aegis::OrderReplace message{};
+    message.header.type = 'U';
+    message.header.stock_locate = stock_locate;
+    message.original_order_reference = original_order_id;
+    message.new_order_reference = new_order_id;
+    message.shares = shares;
+    message.price_1e4 = price;
     return message;
 }
 
@@ -734,6 +772,302 @@ void test_attribution_survives_partial_reduction()
     check_invariants(book);
 }
 
+void test_delete_updates_levels_and_best_prices()
+{
+    aegis::OrderBook book{49};
+    constexpr aegis::Attribution attribution{'D', 'E', 'L', 'T'};
+    CHECK(book.add(add_order(
+              1, 49, aegis::Side::Buy, 40, 10'500, attribution))
+              .has_value());
+    CHECK(book.add(add_order(2, 49, aegis::Side::Buy, 60, 10'500)).has_value());
+    CHECK(book.add(add_order(3, 49, aegis::Side::Buy, 70, 10'000)).has_value());
+    CHECK(book.add(add_order(4, 49, aegis::Side::Sell, 80, 10'700)).has_value());
+    CHECK(book.add(add_order(5, 49, aegis::Side::Sell, 90, 11'000)).has_value());
+
+    CHECK(book.delete_order(deletion(1, 49)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    CHECK(book.order(2)->remaining == 60);
+    CHECK(book.bid_level(10'500)->aggregate_shares == 60);
+    CHECK(book.bid_level(10'500)->order_count == 1);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{10'500});
+
+    CHECK(book.delete_order(deletion(2, 49)).has_value());
+    CHECK(book.bid_level(10'500) == std::nullopt);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{10'000});
+    CHECK(book.order(3)->remaining == 70);
+
+    CHECK(book.delete_order(deletion(4, 49)).has_value());
+    CHECK(book.ask_level(10'700) == std::nullopt);
+    CHECK(book.best_ask() == std::optional<aegis::Price4>{11'000});
+    CHECK(book.order(5)->remaining == 90);
+    check_invariants(book);
+}
+
+void test_delete_only_order_at_locate_zero()
+{
+    aegis::OrderBook book{0};
+    CHECK(book.add(add_order(
+              1,
+              0,
+              aegis::Side::Sell,
+              25,
+              10'000,
+              aegis::Attribution{'M', 'P', 'I', 'D'}))
+              .has_value());
+
+    CHECK(book.delete_order(deletion(1, 0)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    check_logically_empty(book);
+    check_invariants(book);
+}
+
+void test_delete_failures_are_transactional()
+{
+    aegis::OrderBook book{50};
+    CHECK(book.add(add_order(1, 50, aegis::Side::Buy, 40, 10'000)).has_value());
+    CHECK(book.add(add_order(2, 50, aegis::Side::Sell, 60, 11'000)).has_value());
+
+    const auto check_unchanged = [&] {
+        CHECK(book.active_order_count() == 2);
+        CHECK(book.bid_level_count() == 1);
+        CHECK(book.ask_level_count() == 1);
+        CHECK(book.order(1)->remaining == 40);
+        CHECK(book.order(1)->price == 10'000);
+        CHECK(book.order(2)->remaining == 60);
+        CHECK(book.order(2)->price == 11'000);
+        CHECK(book.bid_level(10'000)->aggregate_shares == 40);
+        CHECK(book.bid_level(10'000)->order_count == 1);
+        CHECK(book.ask_level(11'000)->aggregate_shares == 60);
+        CHECK(book.ask_level(11'000)->order_count == 1);
+        CHECK(book.best_bid() == std::optional<aegis::Price4>{10'000});
+        CHECK(book.best_ask() == std::optional<aegis::Price4>{11'000});
+        check_invariants(book);
+    };
+
+    const auto wrong_locate = book.delete_order(deletion(1, 51));
+    CHECK(!wrong_locate.has_value());
+    check_error(
+        wrong_locate.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderDelete);
+    check_unchanged();
+
+    const auto unknown = book.delete_order(deletion(999, 50));
+    CHECK(!unknown.has_value());
+    check_error(
+        unknown.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::UnknownOrderReference);
+    if (unknown.error() != nullptr) {
+        CHECK(unknown.error()->observed_value == 999);
+    }
+    check_unchanged();
+}
+
+void test_replace_different_price_preserves_metadata_and_uses_new_shares()
+{
+    aegis::OrderBook book{51};
+    constexpr aegis::Attribution attribution{'M', 'P', 'I', 'D'};
+    CHECK(book.add(add_order(
+              100, 51, aegis::Side::Buy, 100, 10'000, attribution))
+              .has_value());
+    CHECK(book.cancel(cancellation(100, 51, 60)).has_value());
+    CHECK(book.order(100)->remaining == 40);
+
+    CHECK(book.replace(replacement(100, 200, 51, 250, 10'500)).has_value());
+    CHECK(book.order(100) == std::nullopt);
+    const auto replaced = book.order(200);
+    CHECK(replaced.has_value());
+    if (replaced) {
+        CHECK(replaced->id == 200);
+        CHECK(replaced->stock_locate == 51);
+        CHECK(replaced->side == aegis::Side::Buy);
+        CHECK(replaced->remaining == 250);
+        CHECK(replaced->price == 10'500);
+        CHECK(replaced->has_attribution);
+        CHECK(replaced->attribution == attribution);
+    }
+    CHECK(book.bid_level(10'000) == std::nullopt);
+    CHECK(book.bid_level(10'500)->aggregate_shares == 250);
+    CHECK(book.bid_level(10'500)->order_count == 1);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{10'500});
+    CHECK(book.best_ask() == std::nullopt);
+    check_invariants(book);
+}
+
+void test_replace_sell_updates_best_ask()
+{
+    aegis::OrderBook book{52};
+    CHECK(book.add(add_order(1, 52, aegis::Side::Sell, 50, 10'700)).has_value());
+    CHECK(book.add(add_order(2, 52, aegis::Side::Sell, 70, 11'000)).has_value());
+
+    CHECK(book.replace(replacement(1, 3, 52, 80, 11'500)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    CHECK(book.order(3)->side == aegis::Side::Sell);
+    CHECK(book.order(3)->remaining == 80);
+    CHECK(book.order(3)->price == 11'500);
+    CHECK(book.ask_level(10'700) == std::nullopt);
+    CHECK(book.ask_level(11'500)->aggregate_shares == 80);
+    CHECK(book.ask_level(11'500)->order_count == 1);
+    CHECK(book.best_ask() == std::optional<aegis::Price4>{11'000});
+    CHECK(book.best_bid() == std::nullopt);
+    check_invariants(book);
+}
+
+void test_replace_same_price_with_other_orders()
+{
+    aegis::OrderBook book{53};
+    CHECK(book.add(add_order(10, 53, aegis::Side::Buy, 20, 9'000)).has_value());
+    CHECK(book.replace(replacement(10, 11, 53, 25, 9'000)).has_value());
+    CHECK(book.order(10) == std::nullopt);
+    CHECK(book.order(11)->remaining == 25);
+    CHECK(book.bid_level(9'000)->aggregate_shares == 25);
+    CHECK(book.bid_level(9'000)->order_count == 1);
+
+    CHECK(book.add(add_order(1, 53, aegis::Side::Buy, 50, 10'000)).has_value());
+    CHECK(book.add(add_order(2, 53, aegis::Side::Buy, 30, 10'000)).has_value());
+
+    CHECK(book.replace(replacement(1, 3, 53, 80, 10'000)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    CHECK(book.order(2)->remaining == 30);
+    CHECK(book.order(2)->price == 10'000);
+    CHECK(book.order(3)->remaining == 80);
+    CHECK(book.order(3)->price == 10'000);
+    CHECK(book.bid_level_count() == 2);
+    CHECK(book.bid_level(10'000)->aggregate_shares == 110);
+    CHECK(book.bid_level(10'000)->order_count == 2);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{10'000});
+    check_invariants(book);
+}
+
+void test_replace_different_price_into_existing_level()
+{
+    aegis::OrderBook book{54};
+    CHECK(book.add(add_order(1, 54, aegis::Side::Buy, 50, 10'000)).has_value());
+    CHECK(book.add(add_order(2, 54, aegis::Side::Buy, 30, 10'500)).has_value());
+
+    CHECK(book.replace(replacement(1, 3, 54, 80, 10'500)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    CHECK(book.order(2)->remaining == 30);
+    CHECK(book.order(3)->remaining == 80);
+    CHECK(book.order(3)->side == aegis::Side::Buy);
+    CHECK(book.bid_level(10'000) == std::nullopt);
+    CHECK(book.bid_level(10'500)->aggregate_shares == 110);
+    CHECK(book.bid_level(10'500)->order_count == 2);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{10'500});
+    check_invariants(book);
+}
+
+void test_replace_price_boundaries()
+{
+    aegis::OrderBook book{55};
+    CHECK(book.add(add_order(1, 55, aegis::Side::Buy, 10, 100)).has_value());
+
+    CHECK(book.replace(replacement(1, 2, 55, 20, 0)).has_value());
+    CHECK(book.order(1) == std::nullopt);
+    CHECK(book.order(2)->price == 0);
+    CHECK(book.order(2)->remaining == 20);
+    CHECK(book.bid_level(0)->aggregate_shares == 20);
+
+    CHECK(book.replace(replacement(2, 3, 55, 30, aegis::kMaxPrice4)).has_value());
+    CHECK(book.order(2) == std::nullopt);
+    CHECK(book.order(3)->price == aegis::kMaxPrice4);
+    CHECK(book.order(3)->remaining == 30);
+    CHECK(book.bid_level(0) == std::nullopt);
+    CHECK(book.bid_level(aegis::kMaxPrice4)->aggregate_shares == 30);
+    CHECK(book.best_bid() == std::optional<aegis::Price4>{aegis::kMaxPrice4});
+    check_invariants(book);
+}
+
+void test_replace_failures_are_transactional()
+{
+    aegis::OrderBook book{56};
+    constexpr aegis::Attribution attribution{'O', 'R', 'I', 'G'};
+    CHECK(book.add(add_order(
+              1, 56, aegis::Side::Buy, 40, 10'000, attribution))
+              .has_value());
+    CHECK(book.add(add_order(2, 56, aegis::Side::Sell, 60, 11'000)).has_value());
+
+    const auto check_unchanged = [&] {
+        CHECK(book.active_order_count() == 2);
+        CHECK(book.bid_level_count() == 1);
+        CHECK(book.ask_level_count() == 1);
+        const auto original = book.order(1);
+        CHECK(original.has_value());
+        if (original) {
+            CHECK(original->id == 1);
+            CHECK(original->stock_locate == 56);
+            CHECK(original->side == aegis::Side::Buy);
+            CHECK(original->remaining == 40);
+            CHECK(original->price == 10'000);
+            CHECK(original->has_attribution);
+            CHECK(original->attribution == attribution);
+        }
+        CHECK(book.order(2)->id == 2);
+        CHECK(book.order(2)->side == aegis::Side::Sell);
+        CHECK(book.order(2)->remaining == 60);
+        CHECK(book.order(2)->price == 11'000);
+        CHECK(book.order(3) == std::nullopt);
+        CHECK(book.bid_level(10'000)->aggregate_shares == 40);
+        CHECK(book.bid_level(10'000)->order_count == 1);
+        CHECK(book.bid_level(10'500) == std::nullopt);
+        CHECK(book.ask_level(11'000)->aggregate_shares == 60);
+        CHECK(book.ask_level(11'000)->order_count == 1);
+        CHECK(book.best_bid() == std::optional<aegis::Price4>{10'000});
+        CHECK(book.best_ask() == std::optional<aegis::Price4>{11'000});
+        check_invariants(book);
+    };
+
+    const auto wrong_locate = book.replace(replacement(1, 3, 57, 80, 10'500));
+    CHECK(!wrong_locate.has_value());
+    check_error(
+        wrong_locate.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderReplace);
+    check_unchanged();
+
+    const auto zero_shares = book.replace(replacement(1, 3, 56, 0, 10'500));
+    CHECK(!zero_shares.has_value());
+    check_error(
+        zero_shares.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderReplace);
+    check_unchanged();
+
+    const auto oversized_price = book.replace(
+        replacement(1, 3, 56, 80, aegis::kMaxPrice4 + 1U));
+    CHECK(!oversized_price.has_value());
+    check_error(
+        oversized_price.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderReplace);
+    check_unchanged();
+
+    const auto unknown_original = book.replace(replacement(999, 3, 56, 80, 10'500));
+    CHECK(!unknown_original.has_value());
+    check_error(
+        unknown_original.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::UnknownOrderReference);
+    check_unchanged();
+
+    const auto duplicate_new_id = book.replace(replacement(1, 2, 56, 80, 10'500));
+    CHECK(!duplicate_new_id.has_value());
+    check_error(
+        duplicate_new_id.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::DuplicateOrderReference);
+    check_unchanged();
+
+    const auto unchanged_id = book.replace(replacement(1, 1, 56, 80, 10'500));
+    CHECK(!unchanged_id.has_value());
+    check_error(
+        unchanged_id.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::DuplicateOrderReference);
+    check_unchanged();
+}
+
 }  // namespace
 
 int main()
@@ -760,5 +1094,14 @@ int main()
     test_partial_and_full_cancel();
     test_cancel_failures_are_transactional();
     test_attribution_survives_partial_reduction();
+    test_delete_updates_levels_and_best_prices();
+    test_delete_only_order_at_locate_zero();
+    test_delete_failures_are_transactional();
+    test_replace_different_price_preserves_metadata_and_uses_new_shares();
+    test_replace_sell_updates_best_ask();
+    test_replace_same_price_with_other_orders();
+    test_replace_different_price_into_existing_level();
+    test_replace_price_boundaries();
+    test_replace_failures_are_transactional();
     return failure_count == 0 ? 0 : 1;
 }

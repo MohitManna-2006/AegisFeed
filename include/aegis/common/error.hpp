@@ -48,6 +48,8 @@ enum class ErrorCode : std::uint16_t {
     UnknownOrderReference = 22,
     OverExecution = 23,
     OverCancel = 24,
+    InvalidOrderDelete = 25,
+    InvalidOrderReplace = 26,
 };
 
 struct Error {
@@ -435,7 +437,7 @@ struct Error {
             0,
             order_reference,
             0,
-            "order reduction references an inactive order",
+            "order event references an inactive order",
         };
     }
 
@@ -468,6 +470,40 @@ struct Error {
             cancelled_shares,
             remaining_shares,
             "cancelled shares exceed remaining order shares",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_order_delete(
+        const std::string_view reason,
+        const std::uint64_t observed_value = 0,
+        const std::uint64_t limit_value = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::InvalidOrderDelete,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_order_replace(
+        const std::string_view reason,
+        const std::uint64_t observed_value = 0,
+        const std::uint64_t limit_value = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::InvalidOrderReplace,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
         };
     }
 };

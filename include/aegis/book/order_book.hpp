@@ -55,6 +55,8 @@ public:
     [[nodiscard]] Result<void> execute_with_price(
         const OrderExecutedWithPrice& message);
     [[nodiscard]] Result<void> cancel(const OrderCancel& message);
+    [[nodiscard]] Result<void> delete_order(const OrderDelete& message);
+    [[nodiscard]] Result<void> replace(const OrderReplace& message);
 
     [[nodiscard]] Result<void> validate_invariants() const noexcept;
 

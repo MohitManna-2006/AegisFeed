@@ -117,6 +117,40 @@ Result<BookRouteStatus> BookStore::cancel(const OrderCancel& message)
     return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
 }
 
+Result<BookRouteStatus> BookStore::delete_order(const OrderDelete& message)
+{
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
+    }
+    if (*selected_book.value() == nullptr) {
+        return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
+    }
+
+    const auto result = (*selected_book.value())->delete_order(message);
+    if (!result) {
+        return Result<BookRouteStatus>::failure(*result.error());
+    }
+    return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
+Result<BookRouteStatus> BookStore::replace(const OrderReplace& message)
+{
+    auto selected_book = resolve_book(message.header.stock_locate);
+    if (!selected_book) {
+        return Result<BookRouteStatus>::failure(*selected_book.error());
+    }
+    if (*selected_book.value() == nullptr) {
+        return Result<BookRouteStatus>::success(BookRouteStatus::KnownUnselected);
+    }
+
+    const auto result = (*selected_book.value())->replace(message);
+    if (!result) {
+        return Result<BookRouteStatus>::failure(*result.error());
+    }
+    return Result<BookRouteStatus>::success(BookRouteStatus::Applied);
+}
+
 Result<OrderBook*> BookStore::resolve_book(const StockLocate stock_locate)
 {
     if (!symbol_directory_.is_known(stock_locate)) {

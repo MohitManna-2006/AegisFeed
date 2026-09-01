@@ -349,6 +349,230 @@ Result<void> OrderBook::reduce(
     return invariant_failure("active order has an invalid side");
 }
 
+Result<void> OrderBook::delete_order(const OrderDelete& message)
+{
+    if (message.header.stock_locate != stock_locate_) {
+        return Result<void>::failure(Error::invalid_order_delete(
+            "delete stock locate does not match containing book",
+            message.header.stock_locate,
+            stock_locate_));
+    }
+
+    const auto active_order = active_orders_.find(message.order_reference);
+    if (active_order == active_orders_.end()) {
+        return Result<void>::failure(
+            Error::unknown_order_reference(message.order_reference));
+    }
+    if (active_order->second.id != message.order_reference) {
+        return invariant_failure("active-order key does not match order record id");
+    }
+    if (active_order->second.stock_locate != stock_locate_) {
+        return invariant_failure(
+            "active order stock locate does not match containing book",
+            active_order->second.stock_locate,
+            stock_locate_);
+    }
+    if (active_order->second.remaining == 0) {
+        return invariant_failure("active order has zero remaining shares");
+    }
+
+    const auto delete_from_side = [&](auto& levels) -> Result<void> {
+        const auto level = levels.find(active_order->second.price);
+        if (level == levels.end()) {
+            return invariant_failure("active order has no resting price level");
+        }
+        if (level->second.order_count == 0) {
+            return invariant_failure("resting price level has zero orders");
+        }
+        if (level->second.aggregate_shares < active_order->second.remaining) {
+            return invariant_failure(
+                "resting price level has insufficient aggregate shares",
+                level->second.aggregate_shares,
+                active_order->second.remaining);
+        }
+
+        const auto remaining_level_shares =
+            level->second.aggregate_shares - active_order->second.remaining;
+        const bool level_becomes_empty = level->second.order_count == 1;
+        if (level_becomes_empty != (remaining_level_shares == 0)) {
+            return invariant_failure(
+                "resting price-level count and aggregate disagree on full removal",
+                level->second.order_count,
+                remaining_level_shares);
+        }
+
+        level->second.aggregate_shares = remaining_level_shares;
+        --level->second.order_count;
+        active_orders_.erase(active_order);
+        if (level->second.order_count == 0) {
+            levels.erase(level);
+        }
+
+        debug_validate_invariants();
+        return Result<void>::success();
+    };
+
+    if (active_order->second.side == Side::Buy) {
+        return delete_from_side(bids_);
+    }
+    if (active_order->second.side == Side::Sell) {
+        return delete_from_side(asks_);
+    }
+    return invariant_failure("active order has an invalid side");
+}
+
+Result<void> OrderBook::replace(const OrderReplace& message)
+{
+    if (message.header.stock_locate != stock_locate_) {
+        return Result<void>::failure(Error::invalid_order_replace(
+            "replace stock locate does not match containing book",
+            message.header.stock_locate,
+            stock_locate_));
+    }
+    if (message.shares == 0) {
+        return Result<void>::failure(Error::invalid_order_replace(
+            "replacement order must have positive shares", message.shares, 1));
+    }
+    if (message.price_1e4 > kMaxPrice4) {
+        return Result<void>::failure(Error::invalid_order_replace(
+            "replacement price exceeds the supported Price4 range",
+            message.price_1e4,
+            kMaxPrice4));
+    }
+
+    const auto original = active_orders_.find(message.original_order_reference);
+    if (original == active_orders_.end()) {
+        return Result<void>::failure(
+            Error::unknown_order_reference(message.original_order_reference));
+    }
+    if (original->second.id != message.original_order_reference) {
+        return invariant_failure("active-order key does not match order record id");
+    }
+    if (original->second.stock_locate != stock_locate_) {
+        return invariant_failure(
+            "active order stock locate does not match containing book",
+            original->second.stock_locate,
+            stock_locate_);
+    }
+    if (original->second.remaining == 0) {
+        return invariant_failure("active order has zero remaining shares");
+    }
+    if (active_orders_.contains(message.new_order_reference)) {
+        return Result<void>::failure(
+            Error::duplicate_order_reference(message.new_order_reference));
+    }
+
+    const auto replace_on_side = [&](auto& levels) -> Result<void> {
+        const auto source_level = levels.find(original->second.price);
+        if (source_level == levels.end()) {
+            return invariant_failure("active order has no resting price level");
+        }
+        if (source_level->second.order_count == 0) {
+            return invariant_failure("resting price level has zero orders");
+        }
+        if (source_level->second.aggregate_shares < original->second.remaining) {
+            return invariant_failure(
+                "resting price level has insufficient aggregate shares",
+                source_level->second.aggregate_shares,
+                original->second.remaining);
+        }
+
+        const auto source_shares_after_removal =
+            source_level->second.aggregate_shares - original->second.remaining;
+        const bool source_level_becomes_empty = source_level->second.order_count == 1;
+        if (source_level_becomes_empty != (source_shares_after_removal == 0)) {
+            return invariant_failure(
+                "resting price-level count and aggregate disagree on full removal",
+                source_level->second.order_count,
+                source_shares_after_removal);
+        }
+
+        const bool same_price = message.price_1e4 == original->second.price;
+        auto destination_level = levels.find(message.price_1e4);
+        if (same_price) {
+            if (message.shares >
+                std::numeric_limits<std::uint64_t>::max() -
+                    source_shares_after_removal) {
+                return Result<void>::failure(Error::book_arithmetic_overflow(
+                    "same-price replacement would overflow the price-level aggregate",
+                    message.shares,
+                    std::numeric_limits<std::uint64_t>::max() -
+                        source_shares_after_removal));
+            }
+        } else if (destination_level != levels.end()) {
+            if (destination_level->second.order_count == 0) {
+                return invariant_failure("destination price level has zero orders");
+            }
+            if (destination_level->second.aggregate_shares == 0) {
+                return invariant_failure(
+                    "destination price level has zero aggregate shares");
+            }
+            if (message.shares >
+                std::numeric_limits<std::uint64_t>::max() -
+                    destination_level->second.aggregate_shares) {
+                return Result<void>::failure(Error::book_arithmetic_overflow(
+                    "replacement would overflow the destination-level aggregate",
+                    message.shares,
+                    std::numeric_limits<std::uint64_t>::max() -
+                        destination_level->second.aggregate_shares));
+            }
+            if (destination_level->second.order_count ==
+                std::numeric_limits<std::uint32_t>::max()) {
+                return Result<void>::failure(Error::book_arithmetic_overflow(
+                    "replacement would overflow the destination-level order count",
+                    destination_level->second.order_count,
+                    std::numeric_limits<std::uint32_t>::max()));
+            }
+        }
+
+        const OrderRecord replacement{
+            message.new_order_reference,
+            original->second.stock_locate,
+            original->second.side,
+            message.price_1e4,
+            message.shares,
+            original->second.attribution,
+            original->second.has_attribution,
+        };
+
+        if (same_price) {
+            source_level->second.aggregate_shares =
+                source_shares_after_removal + message.shares;
+            active_orders_.erase(original);
+            active_orders_.emplace(message.new_order_reference, replacement);
+        } else {
+            source_level->second.aggregate_shares = source_shares_after_removal;
+            --source_level->second.order_count;
+            if (source_level->second.order_count == 0) {
+                levels.erase(source_level);
+            }
+
+            active_orders_.erase(original);
+            active_orders_.emplace(message.new_order_reference, replacement);
+
+            if (destination_level != levels.end()) {
+                destination_level->second.aggregate_shares += message.shares;
+                ++destination_level->second.order_count;
+            } else {
+                levels.emplace(
+                    message.price_1e4,
+                    PriceLevel{static_cast<std::uint64_t>(message.shares), 1});
+            }
+        }
+
+        debug_validate_invariants();
+        return Result<void>::success();
+    };
+
+    if (original->second.side == Side::Buy) {
+        return replace_on_side(bids_);
+    }
+    if (original->second.side == Side::Sell) {
+        return replace_on_side(asks_);
+    }
+    return invariant_failure("active order has an invalid side");
+}
+
 Result<void> OrderBook::validate_invariants() const noexcept
 {
     const auto bid_result = validate_levels(bids_, active_orders_, Side::Buy);

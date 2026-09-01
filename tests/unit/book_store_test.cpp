@@ -27,6 +27,8 @@ static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderReduction
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::UnknownOrderReference) == 22);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::OverExecution) == 23);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::OverCancel) == 24);
+static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderDelete) == 25);
+static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidOrderReplace) == 26);
 static_assert(
     std::is_same_v<decltype(std::declval<const aegis::BookStore&>().book(0)),
                    const aegis::OrderBook*>);
@@ -44,6 +46,14 @@ static_assert(
 static_assert(
     std::is_same_v<decltype(std::declval<aegis::BookStore&>().cancel(
                        std::declval<const aegis::OrderCancel&>())),
+                   aegis::Result<aegis::BookRouteStatus>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<aegis::BookStore&>().delete_order(
+                       std::declval<const aegis::OrderDelete&>())),
+                   aegis::Result<aegis::BookRouteStatus>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<aegis::BookStore&>().replace(
+                       std::declval<const aegis::OrderReplace&>())),
                    aegis::Result<aegis::BookRouteStatus>>);
 
 std::size_t failure_count = 0;
@@ -130,6 +140,34 @@ void check(const bool condition, const std::string_view expression, const int li
     message.header.stock_locate = stock_locate;
     message.order_reference = order_id;
     message.cancelled_shares = shares;
+    return message;
+}
+
+[[nodiscard]] aegis::OrderDelete deletion(
+    const aegis::OrderId order_id,
+    const aegis::StockLocate stock_locate)
+{
+    aegis::OrderDelete message{};
+    message.header.type = 'D';
+    message.header.stock_locate = stock_locate;
+    message.order_reference = order_id;
+    return message;
+}
+
+[[nodiscard]] aegis::OrderReplace replacement(
+    const aegis::OrderId original_order_id,
+    const aegis::OrderId new_order_id,
+    const aegis::StockLocate stock_locate,
+    const aegis::Shares shares,
+    const aegis::Price4 price)
+{
+    aegis::OrderReplace message{};
+    message.header.type = 'U';
+    message.header.stock_locate = stock_locate;
+    message.original_order_reference = original_order_id;
+    message.new_order_reference = new_order_id;
+    message.shares = shares;
+    message.price_1e4 = price;
     return message;
 }
 
@@ -535,6 +573,164 @@ void test_reduction_error_propagation_and_full_depletion()
     CHECK(store->book(10)->validate_invariants().has_value());
 }
 
+void test_selected_delete_replace_and_book_isolation()
+{
+    constexpr std::array requested{std::string_view{"AAPL"}, std::string_view{"MSFT"}};
+    auto store = configured_store(requested);
+    if (!store) {
+        return;
+    }
+    CHECK(store->observe(stock_directory(
+              10, {'A', 'A', 'P', 'L', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(store->observe(stock_directory(
+              30, {'M', 'S', 'F', 'T', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(store->add(add_order(
+              1,
+              10,
+              aegis::Side::Buy,
+              50,
+              10'000,
+              aegis::Attribution{'A', 'A', 'P', 'L'}))
+              .has_value());
+    CHECK(store->add(add_order(2, 10, aegis::Side::Buy, 40, 9'500)).has_value());
+    CHECK(store->add(add_order(10, 30, aegis::Side::Sell, 60, 11'000)).has_value());
+
+    const auto deleted = store->delete_order(deletion(1, 10));
+    CHECK(deleted.has_value());
+    if (deleted) {
+        CHECK(*deleted.value() == aegis::BookRouteStatus::Applied);
+    }
+    CHECK(store->book(10)->order(1) == std::nullopt);
+    CHECK(store->book(10)->bid_level(10'000) == std::nullopt);
+    CHECK(store->book(10)->best_bid() == std::optional<aegis::Price4>{9'500});
+    CHECK(store->book(30)->order(10)->remaining == 60);
+    CHECK(store->book(30)->ask_level(11'000)->aggregate_shares == 60);
+
+    const auto replaced = store->replace(replacement(10, 11, 30, 80, 10'500));
+    CHECK(replaced.has_value());
+    if (replaced) {
+        CHECK(*replaced.value() == aegis::BookRouteStatus::Applied);
+    }
+    CHECK(store->book(30)->order(10) == std::nullopt);
+    CHECK(store->book(30)->order(11)->remaining == 80);
+    CHECK(store->book(30)->order(11)->price == 10'500);
+    CHECK(store->book(30)->order(11)->side == aegis::Side::Sell);
+    CHECK(store->book(30)->ask_level(11'000) == std::nullopt);
+    CHECK(store->book(30)->ask_level(10'500)->aggregate_shares == 80);
+    CHECK(store->book(30)->best_ask() == std::optional<aegis::Price4>{10'500});
+    CHECK(store->book(10)->order(2)->remaining == 40);
+    CHECK(store->book(10)->bid_level(9'500)->aggregate_shares == 40);
+    CHECK(store->book(10)->validate_invariants().has_value());
+    CHECK(store->book(30)->validate_invariants().has_value());
+}
+
+void test_known_unselected_and_unknown_delete_replace()
+{
+    constexpr std::array requested{std::string_view{"AAPL"}};
+    auto store = configured_store(requested);
+    if (!store) {
+        return;
+    }
+    CHECK(store->observe(stock_directory(
+              10, {'A', 'A', 'P', 'L', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(store->observe(stock_directory(
+              20, {'N', 'V', 'D', 'A', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(store->add(add_order(1, 10, aegis::Side::Buy, 100, 10'000)).has_value());
+
+    const auto skipped_delete = store->delete_order(deletion(999, 20));
+    const auto skipped_replace = store->replace(replacement(999, 1000, 20, 50, 9'000));
+    CHECK(skipped_delete.has_value());
+    CHECK(skipped_replace.has_value());
+    if (skipped_delete) {
+        CHECK(*skipped_delete.value() == aegis::BookRouteStatus::KnownUnselected);
+    }
+    if (skipped_replace) {
+        CHECK(*skipped_replace.value() == aegis::BookRouteStatus::KnownUnselected);
+    }
+    CHECK(!store->has_book(20));
+
+    const auto unknown_delete = store->delete_order(deletion(1, 99));
+    const auto unknown_replace = store->replace(replacement(1, 3, 99, 50, 9'000));
+    CHECK(!unknown_delete.has_value());
+    CHECK(!unknown_replace.has_value());
+    check_error(
+        unknown_delete.error(),
+        aegis::ErrorCategory::Session,
+        aegis::ErrorCode::UnknownStockLocate);
+    check_error(
+        unknown_replace.error(),
+        aegis::ErrorCategory::Session,
+        aegis::ErrorCode::UnknownStockLocate);
+
+    CHECK(store->book_count() == 1);
+    CHECK(store->book(10)->order(1)->remaining == 100);
+    CHECK(store->book(10)->bid_level(10'000)->aggregate_shares == 100);
+    CHECK(store->book(10)->best_bid() == std::optional<aegis::Price4>{10'000});
+    CHECK(store->book(10)->validate_invariants().has_value());
+}
+
+void test_delete_replace_error_propagation()
+{
+    constexpr std::array requested{std::string_view{"AAPL"}};
+    auto store = configured_store(requested);
+    if (!store) {
+        return;
+    }
+    CHECK(store->observe(stock_directory(
+              10, {'A', 'A', 'P', 'L', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(store->add(add_order(1, 10, aegis::Side::Buy, 100, 10'000)).has_value());
+    CHECK(store->add(add_order(2, 10, aegis::Side::Buy, 50, 10'500)).has_value());
+
+    const auto unknown_delete = store->delete_order(deletion(999, 10));
+    CHECK(!unknown_delete.has_value());
+    check_error(
+        unknown_delete.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::UnknownOrderReference);
+
+    const auto unknown_replace = store->replace(replacement(999, 3, 10, 80, 11'000));
+    CHECK(!unknown_replace.has_value());
+    check_error(
+        unknown_replace.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::UnknownOrderReference);
+
+    const auto duplicate = store->replace(replacement(1, 2, 10, 80, 11'000));
+    CHECK(!duplicate.has_value());
+    check_error(
+        duplicate.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::DuplicateOrderReference);
+
+    const auto zero_shares = store->replace(replacement(1, 3, 10, 0, 11'000));
+    CHECK(!zero_shares.has_value());
+    check_error(
+        zero_shares.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderReplace);
+
+    const auto oversized_price = store->replace(
+        replacement(1, 3, 10, 80, aegis::kMaxPrice4 + 1U));
+    CHECK(!oversized_price.has_value());
+    check_error(
+        oversized_price.error(),
+        aegis::ErrorCategory::BookInvariant,
+        aegis::ErrorCode::InvalidOrderReplace);
+
+    CHECK(store->book(10)->active_order_count() == 2);
+    CHECK(store->book(10)->order(1)->remaining == 100);
+    CHECK(store->book(10)->order(2)->remaining == 50);
+    CHECK(store->book(10)->bid_level(10'000)->aggregate_shares == 100);
+    CHECK(store->book(10)->bid_level(10'500)->aggregate_shares == 50);
+    CHECK(store->book(10)->best_bid() == std::optional<aegis::Price4>{10'500});
+    CHECK(store->book(10)->validate_invariants().has_value());
+}
+
 void test_locate_zero()
 {
     constexpr std::array requested{std::string_view{"ZERO"}};
@@ -562,6 +758,17 @@ void test_locate_zero()
     }
     CHECK(store->book(0)->order(1)->remaining == 6);
     CHECK(store->book(0)->bid_level(100)->aggregate_shares == 6);
+
+    const auto replaced = store->replace(replacement(1, 2, 0, 12, 200));
+    CHECK(replaced.has_value());
+    if (replaced) {
+        CHECK(*replaced.value() == aegis::BookRouteStatus::Applied);
+    }
+    CHECK(store->book(0)->order(1) == std::nullopt);
+    CHECK(store->book(0)->order(2)->remaining == 12);
+    CHECK(store->book(0)->order(2)->price == 200);
+    CHECK(store->book(0)->bid_level(100) == std::nullopt);
+    CHECK(store->book(0)->bid_level(200)->aggregate_shares == 12);
     CHECK(store->book(0)->validate_invariants().has_value());
 }
 
@@ -588,6 +795,9 @@ int main()
     test_selected_reductions_and_book_isolation();
     test_known_unselected_and_unknown_reductions();
     test_reduction_error_propagation_and_full_depletion();
+    test_selected_delete_replace_and_book_isolation();
+    test_known_unselected_and_unknown_delete_replace();
+    test_delete_replace_error_propagation();
     test_locate_zero();
     test_empty_requested_set();
     return failure_count == 0 ? 0 : 1;
