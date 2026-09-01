@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <utility>
 
 namespace aegis {
 namespace {
@@ -463,6 +464,41 @@ struct ExecutionFields {
     });
 }
 
+template <typename Message>
+[[nodiscard]] Result<DecodedItchMessage> lift_decoded_result(
+    Result<Message> result) noexcept
+{
+    Message* const message = result.value();
+    if (message != nullptr) {
+        return Result<DecodedItchMessage>::success(DecodedItchMessage{
+            std::in_place_type<Message>,
+            std::move(*message),
+        });
+    }
+
+    return Result<DecodedItchMessage>::failure(*result.error());
+}
+
+[[nodiscard]] Result<DecodedItchMessage> decode_known_book_neutral(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context,
+    const std::uint8_t message_type,
+    const std::size_t expected_size) noexcept
+{
+    ItchReadCursor reader{payload, context, message_type, expected_size};
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<DecodedItchMessage>::failure(*header_result.error());
+    }
+
+    // Registered book-neutral bodies are intentionally opaque in MVP; their exact
+    // length and common header provide the required structural recognition.
+    return Result<DecodedItchMessage>::success(DecodedItchMessage{
+        std::in_place_type<KnownBookNeutral>,
+        KnownBookNeutral{*header_result.value()},
+    });
+}
+
 }  // namespace
 
 Result<SystemEvent> decode_system_event(
@@ -810,6 +846,62 @@ Result<OrderReplace> decode_order_replace(
         shares,
         price_1e4,
     });
+}
+
+Result<DecodedItchMessage> decode_itch(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    if (payload.empty()) {
+        return Result<DecodedItchMessage>::failure(
+            Error::invalid_itch_length(1, 0, context.sequence, 0));
+    }
+
+    const std::uint8_t raw_type = std::to_integer<std::uint8_t>(payload.front());
+    const char message_type = static_cast<char>(raw_type);
+    const ItchTypeClass classification = classify_itch_type(message_type);
+    if (classification == ItchTypeClass::Unknown) {
+        return Result<DecodedItchMessage>::failure(
+            Error::unknown_itch_type(raw_type, context.sequence));
+    }
+
+    const auto expected_size = expected_itch_length(message_type);
+    if (!expected_size.has_value()) {
+        return Result<DecodedItchMessage>::failure(
+            Error::unknown_itch_type(raw_type, context.sequence));
+    }
+    if (payload.size() != *expected_size) {
+        return Result<DecodedItchMessage>::failure(Error::invalid_itch_length(
+            *expected_size, payload.size(), context.sequence, raw_type));
+    }
+
+    if (classification == ItchTypeClass::KnownBookNeutral) {
+        return decode_known_book_neutral(payload, context, raw_type, *expected_size);
+    }
+
+    switch (message_type) {
+    case 'S':
+        return lift_decoded_result(decode_system_event(payload, context));
+    case 'R':
+        return lift_decoded_result(decode_stock_directory(payload, context));
+    case 'A':
+        return lift_decoded_result(decode_add_order(payload, context));
+    case 'F':
+        return lift_decoded_result(decode_add_order_with_attribution(payload, context));
+    case 'E':
+        return lift_decoded_result(decode_order_executed(payload, context));
+    case 'C':
+        return lift_decoded_result(decode_order_executed_with_price(payload, context));
+    case 'X':
+        return lift_decoded_result(decode_order_cancel(payload, context));
+    case 'D':
+        return lift_decoded_result(decode_order_delete(payload, context));
+    case 'U':
+        return lift_decoded_result(decode_order_replace(payload, context));
+    default:
+        return Result<DecodedItchMessage>::failure(
+            Error::unknown_itch_type(raw_type, context.sequence));
+    }
 }
 
 }  // namespace aegis

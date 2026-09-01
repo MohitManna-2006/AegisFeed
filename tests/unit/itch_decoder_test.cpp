@@ -2,6 +2,7 @@
 
 #include "aegis/common/error.hpp"
 #include "aegis/common/result.hpp"
+#include "aegis/itch/itch_lengths.hpp"
 #include "aegis/itch/itch_types.hpp"
 
 #include <array>
@@ -11,6 +12,7 @@
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <variant>
 
 namespace {
 
@@ -312,6 +314,28 @@ constexpr std::array<std::byte, 35> order_replace_fixture{
     std::byte{0x05},
 };
 
+struct NeutralDispatchEntry {
+    char type;
+    std::size_t length;
+};
+
+constexpr std::array neutral_dispatch_entries{
+    NeutralDispatchEntry{'H', 25},
+    NeutralDispatchEntry{'Y', 20},
+    NeutralDispatchEntry{'L', 26},
+    NeutralDispatchEntry{'V', 35},
+    NeutralDispatchEntry{'W', 12},
+    NeutralDispatchEntry{'K', 28},
+    NeutralDispatchEntry{'J', 35},
+    NeutralDispatchEntry{'h', 21},
+    NeutralDispatchEntry{'P', 44},
+    NeutralDispatchEntry{'Q', 40},
+    NeutralDispatchEntry{'B', 19},
+    NeutralDispatchEntry{'I', 50},
+    NeutralDispatchEntry{'N', 20},
+    NeutralDispatchEntry{'O', 48},
+};
+
 static_assert(system_event_fixture.size() == 12);
 static_assert(stock_directory_fixture.size() == 39);
 static_assert(add_order_fixture.size() == 36);
@@ -325,6 +349,8 @@ static_assert(std::is_trivially_copyable_v<aegis::ItchDecodeContext>);
 static_assert(std::is_nothrow_move_constructible_v<aegis::SystemEvent>);
 static_assert(std::is_nothrow_move_constructible_v<aegis::StockDirectory>);
 static_assert(std::is_nothrow_move_constructible_v<aegis::AddOrder>);
+static_assert(std::variant_size_v<aegis::DecodedItchMessage> == 9);
+static_assert(std::is_nothrow_move_constructible_v<aegis::DecodedItchMessage>);
 
 std::size_t failure_count = 0;
 
@@ -363,6 +389,113 @@ template <typename Enum>
 [[nodiscard]] constexpr std::uint8_t protocol_code(const Enum value) noexcept
 {
     return static_cast<std::uint8_t>(value);
+}
+
+[[nodiscard]] std::array<std::byte, 50> make_neutral_payload(
+    const char type,
+    const std::size_t length)
+{
+    std::array<std::byte, 50> payload{};
+    payload.fill(std::byte{0xA5});
+    payload[0] = static_cast<std::byte>(static_cast<unsigned char>(type));
+    payload[1] = std::byte{0x12};
+    payload[2] = std::byte{0x34};
+    payload[3] = std::byte{0x56};
+    payload[4] = std::byte{0x78};
+    payload[5] = std::byte{0x01};
+    payload[6] = std::byte{0x02};
+    payload[7] = std::byte{0x03};
+    payload[8] = std::byte{0x04};
+    payload[9] = std::byte{0x05};
+    payload[10] = std::byte{0x06};
+    CHECK(length >= 11);
+    CHECK(length <= payload.size());
+    return payload;
+}
+
+void check_unified_exact_length(
+    const std::span<const std::byte> fixture,
+    const char expected_type,
+    const std::size_t expected_size)
+{
+    CHECK(fixture.size() == expected_size);
+    constexpr std::uint64_t sequence = 0xABCDEF0123456789ULL;
+
+    const auto short_result = aegis::decode_itch(
+        fixture.first(expected_size - 1), aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const short_error =
+        check_failure(short_result, aegis::ErrorCode::InvalidItchLength);
+    if (short_error != nullptr) {
+        CHECK(short_error->offset == 0);
+        CHECK(short_error->requested_size == expected_size);
+        CHECK(short_error->available_size == expected_size - 1);
+        CHECK(short_error->observed_value == expected_size - 1);
+        CHECK(short_error->limit_value == expected_size);
+        CHECK(short_error->sequence == sequence);
+        CHECK(short_error->message_type == static_cast<std::uint8_t>(expected_type));
+    }
+
+    std::array<std::byte, 51> long_payload{};
+    for (std::size_t index = 0; index < fixture.size(); ++index) {
+        long_payload[index] = fixture[index];
+    }
+    long_payload[expected_size] = std::byte{0xFF};
+    const auto long_result = aegis::decode_itch(
+        std::span<const std::byte>{long_payload}.first(expected_size + 1),
+        aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const long_error =
+        check_failure(long_result, aegis::ErrorCode::InvalidItchLength);
+    if (long_error != nullptr) {
+        CHECK(long_error->offset == 0);
+        CHECK(long_error->requested_size == expected_size);
+        CHECK(long_error->available_size == expected_size + 1);
+        CHECK(long_error->observed_value == expected_size + 1);
+        CHECK(long_error->limit_value == expected_size);
+        CHECK(long_error->sequence == sequence);
+        CHECK(long_error->message_type == static_cast<std::uint8_t>(expected_type));
+    }
+}
+
+template <typename Expected, std::size_t Size, typename Validator>
+void check_required_dispatch(
+    const std::array<std::byte, Size>& fixture,
+    Validator validate)
+{
+    const auto result = aegis::decode_itch(fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::DecodedItchMessage* const decoded = result.value();
+    CHECK(decoded != nullptr);
+    if (decoded == nullptr) {
+        return;
+    }
+
+    CHECK(std::holds_alternative<Expected>(*decoded));
+    const Expected* const message = std::get_if<Expected>(decoded);
+    CHECK(message != nullptr);
+    if (message != nullptr) {
+        validate(*message);
+    }
+}
+
+void check_unified_validation_error(
+    const aegis::Result<aegis::DecodedItchMessage>& result,
+    const aegis::ErrorCode expected_code,
+    const std::size_t expected_offset,
+    const std::uint64_t expected_observed,
+    const std::uint64_t expected_limit,
+    const char expected_type,
+    const std::uint64_t expected_sequence)
+{
+    const aegis::Error* const error = check_failure(result, expected_code);
+    if (error != nullptr) {
+        CHECK(error->offset == expected_offset);
+        CHECK(error->observed_value == expected_observed);
+        CHECK(error->limit_value == expected_limit);
+        CHECK(error->message_type == static_cast<std::uint8_t>(expected_type));
+        CHECK(error->sequence == expected_sequence);
+    }
 }
 
 template <typename Message, std::size_t Size>
@@ -1304,6 +1437,277 @@ void test_order_replace_price_boundaries()
     }
 }
 
+void test_unified_decoder_empty_payload()
+{
+    constexpr std::uint64_t sequence = 0x0102030405060708ULL;
+    const auto result = aegis::decode_itch(
+        std::span<const std::byte>{}, aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const error =
+        check_failure(result, aegis::ErrorCode::InvalidItchLength);
+    if (error != nullptr) {
+        CHECK(error->offset == 0);
+        CHECK(error->requested_size == 1);
+        CHECK(error->available_size == 0);
+        CHECK(error->observed_value == 0);
+        CHECK(error->limit_value == 1);
+        CHECK(error->sequence == sequence);
+        CHECK(error->message_type == 0);
+    }
+}
+
+void test_unified_decoder_unknown_types()
+{
+    constexpr std::array<std::uint8_t, 6> unknown_types{
+        static_cast<std::uint8_t>('?'),
+        static_cast<std::uint8_t>('Z'),
+        0x00,
+        0x7F,
+        0x80,
+        0xFF,
+    };
+    constexpr std::uint64_t sequence = 0x8877665544332211ULL;
+
+    for (const std::uint8_t type : unknown_types) {
+        const std::array payload{static_cast<std::byte>(type)};
+        const auto result =
+            aegis::decode_itch(payload, aegis::ItchDecodeContext{sequence});
+        const aegis::Error* const error =
+            check_failure(result, aegis::ErrorCode::UnknownItchType);
+        if (error != nullptr) {
+            CHECK(error->offset == 0);
+            CHECK(error->requested_size == 1);
+            CHECK(error->available_size == 1);
+            CHECK(error->observed_value == type);
+            CHECK(error->limit_value == 0);
+            CHECK(error->sequence == sequence);
+            CHECK(error->message_type == type);
+            CHECK(error->message == "unknown ITCH message type");
+        }
+    }
+}
+
+void test_unified_required_dispatch()
+{
+    check_required_dispatch<aegis::SystemEvent>(
+        system_event_fixture,
+        [](const aegis::SystemEvent& message) {
+            CHECK(message.header.type == 'S');
+            CHECK(message.event_code ==
+                  aegis::SystemEventCode::EmergencyMarketConditionHalt);
+        });
+    check_required_dispatch<aegis::StockDirectory>(
+        stock_directory_fixture,
+        [](const aegis::StockDirectory& message) {
+            CHECK(message.header.type == 'R');
+            CHECK(message.stock[0] == 'A');
+            CHECK(message.market_category == aegis::MarketCategory::TexasStockExchange);
+        });
+    check_required_dispatch<aegis::AddOrder>(
+        add_order_fixture,
+        [](const aegis::AddOrder& message) {
+            CHECK(message.header.type == 'A');
+            CHECK(message.order_reference == std::uint64_t{0x0102030405060708ULL});
+            CHECK(!message.attribution.has_value());
+        });
+    check_required_dispatch<aegis::AddOrder>(
+        attributed_add_order_fixture,
+        [](const aegis::AddOrder& message) {
+            CHECK(message.header.type == 'F');
+            CHECK(message.order_reference == std::uint64_t{0x8877665544332211ULL});
+            CHECK(message.attribution.has_value());
+        });
+    check_required_dispatch<aegis::OrderExecuted>(
+        order_executed_fixture,
+        [](const aegis::OrderExecuted& message) {
+            CHECK(message.header.type == 'E');
+            CHECK(message.match_number == std::uint64_t{0x8877665544332211ULL});
+        });
+    check_required_dispatch<aegis::OrderExecutedWithPrice>(
+        order_executed_with_price_fixture,
+        [](const aegis::OrderExecutedWithPrice& message) {
+            CHECK(message.header.type == 'C');
+            CHECK(message.printable);
+            CHECK(message.execution_price_1e4 == aegis::Price4{123'456'789});
+        });
+    check_required_dispatch<aegis::OrderCancel>(
+        order_cancel_fixture,
+        [](const aegis::OrderCancel& message) {
+            CHECK(message.header.type == 'X');
+            CHECK(message.cancelled_shares == std::uint32_t{0x01020304});
+        });
+    check_required_dispatch<aegis::OrderDelete>(
+        order_delete_fixture,
+        [](const aegis::OrderDelete& message) {
+            CHECK(message.header.type == 'D');
+            CHECK(message.order_reference == std::uint64_t{0xA1A2A3A4A5A6A7A8ULL});
+        });
+    check_required_dispatch<aegis::OrderReplace>(
+        order_replace_fixture,
+        [](const aegis::OrderReplace& message) {
+            CHECK(message.header.type == 'U');
+            CHECK(message.new_order_reference == std::uint64_t{0x91A2B3C4D5E6F708ULL});
+            CHECK(message.price_1e4 == aegis::Price4{0x02030405});
+        });
+}
+
+void test_unified_required_exact_lengths()
+{
+    check_unified_exact_length(system_event_fixture, 'S', 12);
+    check_unified_exact_length(stock_directory_fixture, 'R', 39);
+    check_unified_exact_length(add_order_fixture, 'A', 36);
+    check_unified_exact_length(attributed_add_order_fixture, 'F', 40);
+    check_unified_exact_length(order_executed_fixture, 'E', 31);
+    check_unified_exact_length(order_executed_with_price_fixture, 'C', 36);
+    check_unified_exact_length(order_cancel_fixture, 'X', 23);
+    check_unified_exact_length(order_delete_fixture, 'D', 19);
+    check_unified_exact_length(order_replace_fixture, 'U', 35);
+}
+
+void test_unified_known_neutral_dispatch()
+{
+    for (const auto& entry : neutral_dispatch_entries) {
+        const auto registered_length = aegis::expected_itch_length(entry.type);
+        CHECK(registered_length.has_value());
+        if (registered_length.has_value()) {
+            CHECK(*registered_length == entry.length);
+        }
+
+        const auto payload = make_neutral_payload(entry.type, entry.length);
+        const auto result = aegis::decode_itch(
+            std::span<const std::byte>{payload}.first(entry.length));
+        CHECK(result.has_value());
+        CHECK(result.error() == nullptr);
+
+        const aegis::DecodedItchMessage* const decoded = result.value();
+        CHECK(decoded != nullptr);
+        if (decoded == nullptr) {
+            continue;
+        }
+
+        CHECK(std::holds_alternative<aegis::KnownBookNeutral>(*decoded));
+        const aegis::KnownBookNeutral* const message =
+            std::get_if<aegis::KnownBookNeutral>(decoded);
+        CHECK(message != nullptr);
+        if (message != nullptr) {
+            CHECK(message->header.type == entry.type);
+            CHECK(message->header.stock_locate == std::uint16_t{0x1234});
+            CHECK(message->header.tracking_number == std::uint16_t{0x5678});
+            CHECK(message->header.timestamp_ns == std::uint64_t{0x010203040506ULL});
+        }
+    }
+}
+
+void test_unified_known_neutral_exact_lengths()
+{
+    for (const auto& entry : neutral_dispatch_entries) {
+        const auto payload = make_neutral_payload(entry.type, entry.length);
+        check_unified_exact_length(
+            std::span<const std::byte>{payload}.first(entry.length),
+            entry.type,
+            entry.length);
+    }
+}
+
+void test_unified_validation_error_propagation()
+{
+    auto system_event_payload = system_event_fixture;
+    system_event_payload[11] = std::byte{'?'};
+    constexpr std::uint64_t system_event_sequence = 0x1000000000000001ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            system_event_payload, aegis::ItchDecodeContext{system_event_sequence}),
+        aegis::ErrorCode::InvalidItchEnum,
+        11,
+        static_cast<std::uint8_t>('?'),
+        0,
+        'S',
+        system_event_sequence);
+
+    auto stock_directory_payload = stock_directory_fixture;
+    stock_directory_payload[19] = std::byte{0xFF};
+    constexpr std::uint64_t stock_directory_sequence = 0x2000000000000002ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            stock_directory_payload, aegis::ItchDecodeContext{stock_directory_sequence}),
+        aegis::ErrorCode::InvalidItchEnum,
+        19,
+        0xFF,
+        0,
+        'R',
+        stock_directory_sequence);
+
+    auto add_order_payload = add_order_fixture;
+    add_order_payload[19] = std::byte{'?'};
+    constexpr std::uint64_t add_order_sequence = 0x3000000000000003ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            add_order_payload, aegis::ItchDecodeContext{add_order_sequence}),
+        aegis::ErrorCode::InvalidItchEnum,
+        19,
+        static_cast<std::uint8_t>('?'),
+        0,
+        'A',
+        add_order_sequence);
+
+    auto attributed_payload = attributed_add_order_fixture;
+    attributed_payload[38] = std::byte{0x7F};
+    constexpr std::uint64_t attributed_sequence = 0x4000000000000004ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            attributed_payload, aegis::ItchDecodeContext{attributed_sequence}),
+        aegis::ErrorCode::InvalidItchAscii,
+        38,
+        0x7F,
+        0x7E,
+        'F',
+        attributed_sequence);
+
+    auto printable_payload = order_executed_with_price_fixture;
+    printable_payload[31] = std::byte{'?'};
+    constexpr std::uint64_t printable_sequence = 0x5000000000000005ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            printable_payload, aegis::ItchDecodeContext{printable_sequence}),
+        aegis::ErrorCode::InvalidItchEnum,
+        31,
+        static_cast<std::uint8_t>('?'),
+        0,
+        'C',
+        printable_sequence);
+
+    auto execution_price_payload = order_executed_with_price_fixture;
+    execution_price_payload[32] = std::byte{0x77};
+    execution_price_payload[33] = std::byte{0x35};
+    execution_price_payload[34] = std::byte{0x94};
+    execution_price_payload[35] = std::byte{0x01};
+    constexpr std::uint64_t execution_price_sequence = 0x6000000000000006ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            execution_price_payload, aegis::ItchDecodeContext{execution_price_sequence}),
+        aegis::ErrorCode::InvalidItchValue,
+        32,
+        2'000'000'001ULL,
+        2'000'000'000ULL,
+        'C',
+        execution_price_sequence);
+
+    auto replace_price_payload = order_replace_fixture;
+    replace_price_payload[31] = std::byte{0x77};
+    replace_price_payload[32] = std::byte{0x35};
+    replace_price_payload[33] = std::byte{0x94};
+    replace_price_payload[34] = std::byte{0x01};
+    constexpr std::uint64_t replace_price_sequence = 0x7000000000000007ULL;
+    check_unified_validation_error(
+        aegis::decode_itch(
+            replace_price_payload, aegis::ItchDecodeContext{replace_price_sequence}),
+        aegis::ErrorCode::InvalidItchValue,
+        31,
+        2'000'000'001ULL,
+        2'000'000'000ULL,
+        'U',
+        replace_price_sequence);
+}
+
 }  // namespace
 
 int main()
@@ -1339,5 +1743,12 @@ int main()
     test_order_executed_with_price_invalid_printable_values();
     test_order_executed_with_price_boundaries();
     test_order_replace_price_boundaries();
+    test_unified_decoder_empty_payload();
+    test_unified_decoder_unknown_types();
+    test_unified_required_dispatch();
+    test_unified_required_exact_lengths();
+    test_unified_known_neutral_dispatch();
+    test_unified_known_neutral_exact_lengths();
+    test_unified_validation_error_propagation();
     return failure_count == 0 ? 0 : 1;
 }

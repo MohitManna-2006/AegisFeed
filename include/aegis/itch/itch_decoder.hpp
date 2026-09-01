@@ -6,12 +6,31 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
+#include <variant>
 
 namespace aegis {
 
 struct ItchDecodeContext {
     std::uint64_t sequence{};
 };
+
+using DecodedItchMessage = std::variant<
+    SystemEvent,
+    StockDirectory,
+    AddOrder,
+    OrderExecuted,
+    OrderExecutedWithPrice,
+    OrderCancel,
+    OrderDelete,
+    OrderReplace,
+    KnownBookNeutral>;
+
+static_assert(std::is_nothrow_move_constructible_v<DecodedItchMessage>);
+
+[[nodiscard]] Result<DecodedItchMessage> decode_itch(
+    std::span<const std::byte> payload,
+    ItchDecodeContext context = {}) noexcept;
 
 [[nodiscard]] Result<SystemEvent> decode_system_event(
     std::span<const std::byte> payload,

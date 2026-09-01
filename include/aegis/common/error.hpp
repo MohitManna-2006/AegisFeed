@@ -34,6 +34,7 @@ enum class ErrorCode : std::uint16_t {
     InvalidItchEnum = 8,
     InvalidItchAscii = 9,
     InvalidItchValue = 10,
+    UnknownItchType = 11,
 };
 
 struct Error {
@@ -165,6 +166,24 @@ struct Error {
             observed_type,
             expected_type,
             "unexpected ITCH message type",
+            sequence,
+            observed_type,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error unknown_itch_type(
+        const std::uint8_t observed_type,
+        const std::uint64_t sequence) noexcept
+    {
+        return Error{
+            ErrorCategory::ItchDecode,
+            ErrorCode::UnknownItchType,
+            0,
+            1,
+            1,
+            observed_type,
+            0,
+            "unknown ITCH message type",
             sequence,
             observed_type,
         };
