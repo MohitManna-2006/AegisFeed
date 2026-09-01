@@ -1,0 +1,30 @@
+# CMake build output
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/CTestTestfile.cmake
+/Makefile
+/cmake_install.cmake
+/compile_commands.json
+/Testing/
+
+# Compiler and analysis artifacts
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
