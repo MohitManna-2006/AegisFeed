@@ -112,6 +112,11 @@ Result<void> SymbolDirectory::observe(const StockDirectory& directory)
 
     const auto requested = requested_symbols_.find(*normalized.value());
     const bool is_requested = requested != requested_symbols_.end();
+    if (is_requested && requested->second.has_value() &&
+        *requested->second != stock_locate) {
+        return Result<void>::failure(Error::conflicting_selected_symbol_locate(
+            *requested->second, stock_locate));
+    }
 
     symbols_by_locate_.emplace(stock_locate, std::move(*normalized.value()));
     if (is_requested) {

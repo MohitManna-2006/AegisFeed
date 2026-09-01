@@ -42,6 +42,8 @@ enum class ErrorCode : std::uint16_t {
     InvalidAddOrder = 16,
     DuplicateOrderReference = 17,
     BookArithmeticOverflow = 18,
+    ConflictingSelectedSymbolLocate = 19,
+    UnknownStockLocate = 20,
 };
 
 struct Error {
@@ -367,6 +369,37 @@ struct Error {
             observed_value,
             limit_value,
             reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error conflicting_selected_symbol_locate(
+        const std::uint16_t existing_stock_locate,
+        const std::uint16_t observed_stock_locate) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::ConflictingSelectedSymbolLocate,
+            0,
+            0,
+            0,
+            observed_stock_locate,
+            existing_stock_locate,
+            "requested symbol is already discovered at a different stock locate",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error unknown_stock_locate(
+        const std::uint16_t stock_locate) noexcept
+    {
+        return Error{
+            ErrorCategory::Session,
+            ErrorCode::UnknownStockLocate,
+            0,
+            0,
+            0,
+            stock_locate,
+            0,
+            "order event references an unknown stock locate",
         };
     }
 };

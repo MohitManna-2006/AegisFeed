@@ -19,6 +19,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(
     aegis_core STATIC
+    src/book/book_store.cpp
     src/book/order_book.cpp
     src/book/symbol_directory.cpp
     src/common/core.cpp
@@ -112,4 +113,11 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_symbol_directory_test)
 
     add_test(NAME aegis.symbol_directory COMMAND aegis_symbol_directory_test)
+
+    add_executable(aegis_book_store_test tests/unit/book_store_test.cpp)
+    target_link_libraries(aegis_book_store_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_book_store_test)
+    aegis_enable_sanitizers(aegis_book_store_test)
+
+    add_test(NAME aegis.book_store COMMAND aegis_book_store_test)
 endif()

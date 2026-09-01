@@ -20,6 +20,8 @@ static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::BookInvariantViolatio
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidRequestedSymbol) == 13);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::InvalidStockSymbol) == 14);
 static_assert(static_cast<std::uint16_t>(aegis::ErrorCode::ConflictingStockLocate) == 15);
+static_assert(
+    static_cast<std::uint16_t>(aegis::ErrorCode::ConflictingSelectedSymbolLocate) == 19);
 
 std::size_t failure_count = 0;
 
@@ -350,6 +352,64 @@ void test_conflict_is_transactional()
     }
 }
 
+void test_selected_symbol_locate_conflict_is_transactional()
+{
+    constexpr std::array requested{std::string_view{"AAPL"}};
+    auto directory = configured_directory(requested);
+    if (!directory) {
+        return;
+    }
+
+    CHECK(directory->observe(stock_directory(
+              10, {'A', 'A', 'P', 'L', ' ', ' ', ' ', ' '}))
+              .has_value());
+    const auto conflict = directory->observe(stock_directory(
+        20, {'A', 'A', 'P', 'L', ' ', ' ', ' ', ' '}));
+    CHECK(!conflict.has_value());
+    check_error(
+        conflict.error(),
+        aegis::ErrorCategory::Session,
+        aegis::ErrorCode::ConflictingSelectedSymbolLocate);
+    if (conflict.error() != nullptr) {
+        CHECK(conflict.error()->observed_value == 20);
+        CHECK(conflict.error()->limit_value == 10);
+    }
+
+    CHECK(directory->known_locate_count() == 1);
+    CHECK(directory->discovered_requested_symbol_count() == 1);
+    CHECK(directory->is_known(10));
+    CHECK(directory->is_selected(10));
+    CHECK(!directory->is_known(20));
+    CHECK(!directory->is_selected(20));
+    CHECK(directory->all_requested_symbols_discovered());
+    const auto discovered = directory->discovered_locate("AAPL");
+    CHECK(discovered.has_value());
+    if (discovered) {
+        CHECK(*discovered.value() == std::optional<aegis::StockLocate>{10});
+    }
+}
+
+void test_duplicate_unrequested_symbol_locates_are_allowed()
+{
+    constexpr std::array<std::string_view, 0> requested{};
+    auto directory = configured_directory(requested);
+    if (!directory) {
+        return;
+    }
+
+    CHECK(directory->observe(stock_directory(
+              10, {'N', 'V', 'D', 'A', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(directory->observe(stock_directory(
+              20, {'N', 'V', 'D', 'A', ' ', ' ', ' ', ' '}))
+              .has_value());
+    CHECK(directory->known_locate_count() == 2);
+    CHECK(directory->is_known(10));
+    CHECK(directory->is_known(20));
+    CHECK(!directory->is_selected(10));
+    CHECK(!directory->is_selected(20));
+}
+
 void test_empty_requested_set()
 {
     constexpr std::array<std::string_view, 0> requested{};
@@ -394,6 +454,8 @@ int main()
     test_locate_zero_and_distinct_locates();
     test_idempotent_observation();
     test_conflict_is_transactional();
+    test_selected_symbol_locate_conflict_is_transactional();
+    test_duplicate_unrequested_symbol_locates_are_allowed();
     test_empty_requested_set();
     test_invalid_configuration_is_structured();
     return failure_count == 0 ? 0 : 1;
