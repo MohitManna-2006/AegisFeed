@@ -25,6 +25,8 @@ enum class ErrorCategory : std::uint8_t {
 enum class ErrorCode : std::uint16_t {
     None = 0,
     ReadPastEnd = 1,
+    WritePastEnd = 2,
+    ValueOutOfRange = 3,
 };
 
 struct Error {
@@ -33,6 +35,8 @@ struct Error {
     std::size_t offset{0};
     std::size_t requested_size{0};
     std::size_t available_size{0};
+    std::uint64_t observed_value{0};
+    std::uint64_t limit_value{0};
     std::string_view message{};
 
     [[nodiscard]] static constexpr Error read_past_end(
@@ -46,7 +50,43 @@ struct Error {
             offset,
             requested_size,
             available_size,
+            0,
+            0,
             "read exceeds remaining buffer",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error write_past_end(
+        const std::size_t offset,
+        const std::size_t requested_size,
+        const std::size_t available_size) noexcept
+    {
+        return Error{
+            ErrorCategory::ResourceLimit,
+            ErrorCode::WritePastEnd,
+            offset,
+            requested_size,
+            available_size,
+            0,
+            0,
+            "write exceeds remaining buffer",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error value_out_of_range(
+        const std::size_t offset,
+        const std::uint64_t observed_value,
+        const std::uint64_t limit_value) noexcept
+    {
+        return Error{
+            ErrorCategory::InputFraming,
+            ErrorCode::ValueOutOfRange,
+            offset,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            "value does not fit field width",
         };
     }
 };

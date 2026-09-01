@@ -69,4 +69,47 @@ private:
     Error error_{};
 };
 
+template <>
+class [[nodiscard]] Result<void> {
+public:
+    [[nodiscard]] static constexpr Result success() noexcept
+    {
+        return Result{true, Error{}};
+    }
+
+    [[nodiscard]] static constexpr Result failure(const Error error) noexcept
+    {
+        return Result{false, error};
+    }
+
+    [[nodiscard]] constexpr bool has_value() const noexcept
+    {
+        return has_value_;
+    }
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept
+    {
+        return has_value();
+    }
+
+    [[nodiscard]] constexpr Error* error() noexcept
+    {
+        return has_value_ ? nullptr : std::addressof(error_);
+    }
+
+    [[nodiscard]] constexpr const Error* error() const noexcept
+    {
+        return has_value_ ? nullptr : std::addressof(error_);
+    }
+
+private:
+    constexpr Result(const bool has_value, const Error error) noexcept
+        : has_value_{has_value}, error_{error}
+    {
+    }
+
+    bool has_value_{false};
+    Error error_{};
+};
+
 }  // namespace aegis
