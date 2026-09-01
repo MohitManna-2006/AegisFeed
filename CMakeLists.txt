@@ -42,4 +42,10 @@ if(BUILD_TESTING)
     aegis_enable_compiler_warnings(aegis_smoke_test)
 
     add_test(NAME aegis.smoke COMMAND aegis_smoke_test)
+
+    add_executable(aegis_byte_reader_test tests/unit/byte_reader_test.cpp)
+    target_link_libraries(aegis_byte_reader_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_byte_reader_test)
+
+    add_test(NAME aegis.byte_reader COMMAND aegis_byte_reader_test)
 endif()
