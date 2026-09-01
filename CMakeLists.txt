@@ -9,6 +9,7 @@ project(
 
 include(CTest)
 include(cmake/CompilerWarnings.cmake)
+include(cmake/Sanitizers.cmake)
 
 option(AEGIS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
@@ -27,43 +28,51 @@ target_include_directories(
         $<INSTALL_INTERFACE:include>
 )
 aegis_enable_compiler_warnings(aegis_core)
+aegis_enable_sanitizers(aegis_core)
 
 add_executable(aegis_replay src/app/replay_main.cpp)
 target_link_libraries(aegis_replay PRIVATE AegisFeed::core)
 aegis_enable_compiler_warnings(aegis_replay)
+aegis_enable_sanitizers(aegis_replay)
 
 add_executable(aegis_feed src/app/feed_main.cpp)
 target_link_libraries(aegis_feed PRIVATE AegisFeed::core)
 aegis_enable_compiler_warnings(aegis_feed)
+aegis_enable_sanitizers(aegis_feed)
 
 if(BUILD_TESTING)
     add_executable(aegis_smoke_test tests/unit/smoke_test.cpp)
     target_link_libraries(aegis_smoke_test PRIVATE AegisFeed::core)
     aegis_enable_compiler_warnings(aegis_smoke_test)
+    aegis_enable_sanitizers(aegis_smoke_test)
 
     add_test(NAME aegis.smoke COMMAND aegis_smoke_test)
 
     add_executable(aegis_byte_reader_test tests/unit/byte_reader_test.cpp)
     target_link_libraries(aegis_byte_reader_test PRIVATE AegisFeed::core)
     aegis_enable_compiler_warnings(aegis_byte_reader_test)
+    aegis_enable_sanitizers(aegis_byte_reader_test)
 
     add_test(NAME aegis.byte_reader COMMAND aegis_byte_reader_test)
 
     add_executable(aegis_byte_writer_test tests/unit/byte_writer_test.cpp)
     target_link_libraries(aegis_byte_writer_test PRIVATE AegisFeed::core)
     aegis_enable_compiler_warnings(aegis_byte_writer_test)
+    aegis_enable_sanitizers(aegis_byte_writer_test)
 
     add_test(NAME aegis.byte_writer COMMAND aegis_byte_writer_test)
 
     add_executable(aegis_mold_session_test tests/unit/mold_session_test.cpp)
     target_link_libraries(aegis_mold_session_test PRIVATE AegisFeed::core)
     aegis_enable_compiler_warnings(aegis_mold_session_test)
+    aegis_enable_sanitizers(aegis_mold_session_test)
 
     add_test(NAME aegis.mold_session COMMAND aegis_mold_session_test)
 
     add_executable(aegis_unique_fd_test tests/unit/unique_fd_test.cpp)
     target_link_libraries(aegis_unique_fd_test PRIVATE AegisFeed::core)
     aegis_enable_compiler_warnings(aegis_unique_fd_test)
+    aegis_enable_sanitizers(aegis_unique_fd_test)
 
     add_test(NAME aegis.unique_fd COMMAND aegis_unique_fd_test)
 endif()

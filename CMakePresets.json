@@ -27,6 +27,18 @@
         "BUILD_TESTING": "ON",
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "sanitizers",
+      "displayName": "ASan and UBSan",
+      "description": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
+      "binaryDir": "${sourceDir}/build/sanitizers",
+      "cacheVariables": {
+        "AEGIS_ENABLE_SANITIZERS": "ON",
+        "AEGIS_WARNINGS_AS_ERRORS": "ON",
+        "BUILD_TESTING": "ON",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
   "buildPresets": [
@@ -37,6 +49,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers"
     }
   ],
   "testPresets": [
@@ -52,6 +68,20 @@
       "configurePreset": "release",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers",
+      "environment": {
+        "ASAN_OPTIONS": "abort_on_error=1:halt_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "stopOnFailure": true
       }
     }
   ]
