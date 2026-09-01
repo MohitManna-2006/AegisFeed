@@ -153,10 +153,174 @@ constexpr std::array<std::byte, 40> attributed_add_order_fixture{
     std::byte{'D'},
 };
 
+constexpr std::array<std::byte, 31> order_executed_fixture{
+    std::byte{'E'},
+    std::byte{0x12},
+    std::byte{0x34},
+    std::byte{0x56},
+    std::byte{0x78},
+    std::byte{0x01},
+    std::byte{0x02},
+    std::byte{0x03},
+    std::byte{0x04},
+    std::byte{0x05},
+    std::byte{0x06},
+    std::byte{0x01},
+    std::byte{0x02},
+    std::byte{0x03},
+    std::byte{0x04},
+    std::byte{0x05},
+    std::byte{0x06},
+    std::byte{0x07},
+    std::byte{0x08},
+    std::byte{0x10},
+    std::byte{0x20},
+    std::byte{0x30},
+    std::byte{0x40},
+    std::byte{0x88},
+    std::byte{0x77},
+    std::byte{0x66},
+    std::byte{0x55},
+    std::byte{0x44},
+    std::byte{0x33},
+    std::byte{0x22},
+    std::byte{0x11},
+};
+
+constexpr std::array<std::byte, 36> order_executed_with_price_fixture{
+    std::byte{'C'},
+    std::byte{0xAB},
+    std::byte{0xCD},
+    std::byte{0x13},
+    std::byte{0x57},
+    std::byte{0x0A},
+    std::byte{0x0B},
+    std::byte{0x0C},
+    std::byte{0x0D},
+    std::byte{0x0E},
+    std::byte{0x0F},
+    std::byte{0x11},
+    std::byte{0x22},
+    std::byte{0x33},
+    std::byte{0x44},
+    std::byte{0x55},
+    std::byte{0x66},
+    std::byte{0x77},
+    std::byte{0x88},
+    std::byte{0x0A},
+    std::byte{0x0B},
+    std::byte{0x0C},
+    std::byte{0x0D},
+    std::byte{0x01},
+    std::byte{0x23},
+    std::byte{0x45},
+    std::byte{0x67},
+    std::byte{0x89},
+    std::byte{0xAB},
+    std::byte{0xCD},
+    std::byte{0xEF},
+    std::byte{'Y'},
+    std::byte{0x07},
+    std::byte{0x5B},
+    std::byte{0xCD},
+    std::byte{0x15},
+};
+
+constexpr std::array<std::byte, 23> order_cancel_fixture{
+    std::byte{'X'},
+    std::byte{0x24},
+    std::byte{0x68},
+    std::byte{0xAC},
+    std::byte{0xE0},
+    std::byte{0x11},
+    std::byte{0x12},
+    std::byte{0x13},
+    std::byte{0x14},
+    std::byte{0x15},
+    std::byte{0x16},
+    std::byte{0x10},
+    std::byte{0x20},
+    std::byte{0x30},
+    std::byte{0x40},
+    std::byte{0x50},
+    std::byte{0x60},
+    std::byte{0x70},
+    std::byte{0x80},
+    std::byte{0x01},
+    std::byte{0x02},
+    std::byte{0x03},
+    std::byte{0x04},
+};
+
+constexpr std::array<std::byte, 19> order_delete_fixture{
+    std::byte{'D'},
+    std::byte{0x0F},
+    std::byte{0x1E},
+    std::byte{0x2D},
+    std::byte{0x3C},
+    std::byte{0x21},
+    std::byte{0x22},
+    std::byte{0x23},
+    std::byte{0x24},
+    std::byte{0x25},
+    std::byte{0x26},
+    std::byte{0xA1},
+    std::byte{0xA2},
+    std::byte{0xA3},
+    std::byte{0xA4},
+    std::byte{0xA5},
+    std::byte{0xA6},
+    std::byte{0xA7},
+    std::byte{0xA8},
+};
+
+constexpr std::array<std::byte, 35> order_replace_fixture{
+    std::byte{'U'},
+    std::byte{0xBE},
+    std::byte{0xEF},
+    std::byte{0xCA},
+    std::byte{0xFE},
+    std::byte{0x31},
+    std::byte{0x32},
+    std::byte{0x33},
+    std::byte{0x34},
+    std::byte{0x35},
+    std::byte{0x36},
+    std::byte{0x0A},
+    std::byte{0x1B},
+    std::byte{0x2C},
+    std::byte{0x3D},
+    std::byte{0x4E},
+    std::byte{0x5F},
+    std::byte{0x60},
+    std::byte{0x71},
+    std::byte{0x91},
+    std::byte{0xA2},
+    std::byte{0xB3},
+    std::byte{0xC4},
+    std::byte{0xD5},
+    std::byte{0xE6},
+    std::byte{0xF7},
+    std::byte{0x08},
+    std::byte{0x50},
+    std::byte{0x60},
+    std::byte{0x70},
+    std::byte{0x80},
+    std::byte{0x02},
+    std::byte{0x03},
+    std::byte{0x04},
+    std::byte{0x05},
+};
+
 static_assert(system_event_fixture.size() == 12);
 static_assert(stock_directory_fixture.size() == 39);
 static_assert(add_order_fixture.size() == 36);
 static_assert(attributed_add_order_fixture.size() == 40);
+static_assert(order_executed_fixture.size() == 31);
+static_assert(order_executed_with_price_fixture.size() == 36);
+static_assert(order_cancel_fixture.size() == 23);
+static_assert(order_delete_fixture.size() == 19);
+static_assert(order_replace_fixture.size() == 35);
 static_assert(std::is_trivially_copyable_v<aegis::ItchDecodeContext>);
 static_assert(std::is_nothrow_move_constructible_v<aegis::SystemEvent>);
 static_assert(std::is_nothrow_move_constructible_v<aegis::StockDirectory>);
@@ -199,6 +363,72 @@ template <typename Enum>
 [[nodiscard]] constexpr std::uint8_t protocol_code(const Enum value) noexcept
 {
     return static_cast<std::uint8_t>(value);
+}
+
+template <typename Message, std::size_t Size>
+void check_exact_length_validation(
+    const std::array<std::byte, Size>& fixture,
+    const char expected_type,
+    aegis::Result<Message> (*const decoder)(
+        std::span<const std::byte>, aegis::ItchDecodeContext) noexcept)
+{
+    constexpr std::uint64_t sequence = 0x1020304050607080ULL;
+    const auto short_result = decoder(
+        std::span<const std::byte>{fixture}.first(Size - 1),
+        aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const short_error =
+        check_failure(short_result, aegis::ErrorCode::InvalidItchLength);
+    if (short_error != nullptr) {
+        CHECK(short_error->offset == 0);
+        CHECK(short_error->requested_size == Size);
+        CHECK(short_error->available_size == Size - 1);
+        CHECK(short_error->observed_value == Size - 1);
+        CHECK(short_error->limit_value == Size);
+        CHECK(short_error->sequence == sequence);
+        CHECK(short_error->message_type == static_cast<std::uint8_t>(expected_type));
+    }
+
+    std::array<std::byte, Size + 1> long_payload{};
+    for (std::size_t index = 0; index < fixture.size(); ++index) {
+        long_payload[index] = fixture[index];
+    }
+    long_payload[Size] = std::byte{0xFF};
+    const auto long_result = decoder(long_payload, aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const long_error =
+        check_failure(long_result, aegis::ErrorCode::InvalidItchLength);
+    if (long_error != nullptr) {
+        CHECK(long_error->offset == 0);
+        CHECK(long_error->requested_size == Size);
+        CHECK(long_error->available_size == Size + 1);
+        CHECK(long_error->observed_value == Size + 1);
+        CHECK(long_error->limit_value == Size);
+        CHECK(long_error->sequence == sequence);
+        CHECK(long_error->message_type == static_cast<std::uint8_t>(expected_type));
+    }
+}
+
+template <typename Message, std::size_t Size>
+void check_wrong_type_validation(
+    const std::array<std::byte, Size>& fixture,
+    const char expected_type,
+    aegis::Result<Message> (*const decoder)(
+        std::span<const std::byte>, aegis::ItchDecodeContext) noexcept)
+{
+    auto payload = fixture;
+    payload[0] = std::byte{'S'};
+    constexpr std::uint64_t sequence = 0x8877665544332211ULL;
+    const auto result = decoder(payload, aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const error =
+        check_failure(result, aegis::ErrorCode::UnexpectedItchType);
+    if (error != nullptr) {
+        CHECK(error->offset == 0);
+        CHECK(error->requested_size == 1);
+        CHECK(error->available_size == 1);
+        CHECK(error->observed_value == static_cast<std::uint8_t>('S'));
+        CHECK(error->limit_value == static_cast<std::uint8_t>(expected_type));
+        CHECK(error->sequence == sequence);
+        CHECK(error->message_type == static_cast<std::uint8_t>('S'));
+    }
 }
 
 void test_system_event_golden_fixture()
@@ -814,6 +1044,266 @@ void test_attributed_add_order_invalid_attribution()
     }
 }
 
+void test_order_executed_golden_fixture()
+{
+    const auto result = aegis::decode_order_executed(order_executed_fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::OrderExecuted* const message = result.value();
+    CHECK(message != nullptr);
+    if (message == nullptr) {
+        return;
+    }
+
+    CHECK(message->header.type == 'E');
+    CHECK(message->header.stock_locate == std::uint16_t{0x1234});
+    CHECK(message->header.tracking_number == std::uint16_t{0x5678});
+    CHECK(message->header.timestamp_ns == std::uint64_t{0x010203040506ULL});
+    CHECK(message->order_reference == std::uint64_t{0x0102030405060708ULL});
+    CHECK(message->executed_shares == std::uint32_t{0x10203040});
+    CHECK(message->match_number == std::uint64_t{0x8877665544332211ULL});
+}
+
+void test_order_executed_with_price_golden_fixture()
+{
+    const auto result =
+        aegis::decode_order_executed_with_price(order_executed_with_price_fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::OrderExecutedWithPrice* const message = result.value();
+    CHECK(message != nullptr);
+    if (message == nullptr) {
+        return;
+    }
+
+    CHECK(message->header.type == 'C');
+    CHECK(message->header.stock_locate == std::uint16_t{0xABCD});
+    CHECK(message->header.tracking_number == std::uint16_t{0x1357});
+    CHECK(message->header.timestamp_ns == std::uint64_t{0x0A0B0C0D0E0FULL});
+    CHECK(message->order_reference == std::uint64_t{0x1122334455667788ULL});
+    CHECK(message->executed_shares == std::uint32_t{0x0A0B0C0D});
+    CHECK(message->match_number == std::uint64_t{0x0123456789ABCDEFULL});
+    CHECK(message->printable);
+    CHECK(message->execution_price_1e4 == aegis::Price4{123'456'789});
+}
+
+void test_order_cancel_golden_fixture()
+{
+    const auto result = aegis::decode_order_cancel(order_cancel_fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::OrderCancel* const message = result.value();
+    CHECK(message != nullptr);
+    if (message == nullptr) {
+        return;
+    }
+
+    CHECK(message->header.type == 'X');
+    CHECK(message->header.stock_locate == std::uint16_t{0x2468});
+    CHECK(message->header.tracking_number == std::uint16_t{0xACE0});
+    CHECK(message->header.timestamp_ns == std::uint64_t{0x111213141516ULL});
+    CHECK(message->order_reference == std::uint64_t{0x1020304050607080ULL});
+    CHECK(message->cancelled_shares == std::uint32_t{0x01020304});
+}
+
+void test_order_delete_golden_fixture()
+{
+    const auto result = aegis::decode_order_delete(order_delete_fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::OrderDelete* const message = result.value();
+    CHECK(message != nullptr);
+    if (message == nullptr) {
+        return;
+    }
+
+    CHECK(message->header.type == 'D');
+    CHECK(message->header.stock_locate == std::uint16_t{0x0F1E});
+    CHECK(message->header.tracking_number == std::uint16_t{0x2D3C});
+    CHECK(message->header.timestamp_ns == std::uint64_t{0x212223242526ULL});
+    CHECK(message->order_reference == std::uint64_t{0xA1A2A3A4A5A6A7A8ULL});
+}
+
+void test_order_replace_golden_fixture()
+{
+    const auto result = aegis::decode_order_replace(order_replace_fixture);
+    CHECK(result.has_value());
+    CHECK(result.error() == nullptr);
+
+    const aegis::OrderReplace* const message = result.value();
+    CHECK(message != nullptr);
+    if (message == nullptr) {
+        return;
+    }
+
+    CHECK(message->header.type == 'U');
+    CHECK(message->header.stock_locate == std::uint16_t{0xBEEF});
+    CHECK(message->header.tracking_number == std::uint16_t{0xCAFE});
+    CHECK(message->header.timestamp_ns == std::uint64_t{0x313233343536ULL});
+    CHECK(message->original_order_reference == std::uint64_t{0x0A1B2C3D4E5F6071ULL});
+    CHECK(message->new_order_reference == std::uint64_t{0x91A2B3C4D5E6F708ULL});
+    CHECK(message->shares == std::uint32_t{0x50607080});
+    CHECK(message->price_1e4 == aegis::Price4{0x02030405});
+}
+
+void test_order_event_exact_length_validation()
+{
+    check_exact_length_validation(
+        order_executed_fixture, 'E', aegis::decode_order_executed);
+    check_exact_length_validation(
+        order_executed_with_price_fixture,
+        'C',
+        aegis::decode_order_executed_with_price);
+    check_exact_length_validation(order_cancel_fixture, 'X', aegis::decode_order_cancel);
+    check_exact_length_validation(order_delete_fixture, 'D', aegis::decode_order_delete);
+    check_exact_length_validation(order_replace_fixture, 'U', aegis::decode_order_replace);
+}
+
+void test_order_event_wrong_types()
+{
+    check_wrong_type_validation(
+        order_executed_fixture, 'E', aegis::decode_order_executed);
+    check_wrong_type_validation(
+        order_executed_with_price_fixture,
+        'C',
+        aegis::decode_order_executed_with_price);
+    check_wrong_type_validation(order_cancel_fixture, 'X', aegis::decode_order_cancel);
+    check_wrong_type_validation(order_delete_fixture, 'D', aegis::decode_order_delete);
+    check_wrong_type_validation(order_replace_fixture, 'U', aegis::decode_order_replace);
+}
+
+void test_order_executed_with_price_printable_values()
+{
+    const auto yes_result =
+        aegis::decode_order_executed_with_price(order_executed_with_price_fixture);
+    CHECK(yes_result.has_value());
+    if (yes_result.value() != nullptr) {
+        CHECK(yes_result.value()->printable);
+    }
+
+    auto no_payload = order_executed_with_price_fixture;
+    no_payload[31] = std::byte{'N'};
+    const auto no_result = aegis::decode_order_executed_with_price(no_payload);
+    CHECK(no_result.has_value());
+    if (no_result.value() != nullptr) {
+        CHECK(!no_result.value()->printable);
+    }
+}
+
+void test_order_executed_with_price_invalid_printable_values()
+{
+    constexpr std::array invalid_values{std::byte{'?'}, std::byte{0x80}};
+    constexpr std::uint64_t sequence = 0x0F1E2D3C4B5A6978ULL;
+
+    for (const std::byte invalid_value : invalid_values) {
+        auto payload = order_executed_with_price_fixture;
+        payload[31] = invalid_value;
+        const auto result = aegis::decode_order_executed_with_price(
+            payload, aegis::ItchDecodeContext{sequence});
+        const aegis::Error* const error =
+            check_failure(result, aegis::ErrorCode::InvalidItchEnum);
+        if (error != nullptr) {
+            CHECK(error->offset == 31);
+            CHECK(error->observed_value ==
+                  std::to_integer<std::uint8_t>(invalid_value));
+            CHECK(error->sequence == sequence);
+            CHECK(error->message_type == static_cast<std::uint8_t>('C'));
+        }
+    }
+}
+
+void test_order_executed_with_price_boundaries()
+{
+    auto zero_payload = order_executed_with_price_fixture;
+    zero_payload[32] = std::byte{0x00};
+    zero_payload[33] = std::byte{0x00};
+    zero_payload[34] = std::byte{0x00};
+    zero_payload[35] = std::byte{0x00};
+    const auto zero_result = aegis::decode_order_executed_with_price(zero_payload);
+    CHECK(zero_result.has_value());
+    if (zero_result.value() != nullptr) {
+        CHECK(zero_result.value()->execution_price_1e4 == aegis::Price4{0});
+    }
+
+    auto maximum_payload = order_executed_with_price_fixture;
+    maximum_payload[32] = std::byte{0x77};
+    maximum_payload[33] = std::byte{0x35};
+    maximum_payload[34] = std::byte{0x94};
+    maximum_payload[35] = std::byte{0x00};
+    const auto maximum_result = aegis::decode_order_executed_with_price(maximum_payload);
+    CHECK(maximum_result.has_value());
+    if (maximum_result.value() != nullptr) {
+        CHECK(maximum_result.value()->execution_price_1e4 == aegis::kMaxPrice4);
+    }
+
+    auto oversized_payload = order_executed_with_price_fixture;
+    oversized_payload[32] = std::byte{0x77};
+    oversized_payload[33] = std::byte{0x35};
+    oversized_payload[34] = std::byte{0x94};
+    oversized_payload[35] = std::byte{0x01};
+    constexpr std::uint64_t sequence = 0xCAFEBABE10203040ULL;
+    const auto oversized_result = aegis::decode_order_executed_with_price(
+        oversized_payload, aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const error =
+        check_failure(oversized_result, aegis::ErrorCode::InvalidItchValue);
+    if (error != nullptr) {
+        CHECK(error->offset == 32);
+        CHECK(error->observed_value == 2'000'000'001ULL);
+        CHECK(error->limit_value == 2'000'000'000ULL);
+        CHECK(error->sequence == sequence);
+        CHECK(error->message_type == static_cast<std::uint8_t>('C'));
+        CHECK(error->message == "ITCH value exceeds permitted range");
+    }
+}
+
+void test_order_replace_price_boundaries()
+{
+    auto zero_payload = order_replace_fixture;
+    zero_payload[31] = std::byte{0x00};
+    zero_payload[32] = std::byte{0x00};
+    zero_payload[33] = std::byte{0x00};
+    zero_payload[34] = std::byte{0x00};
+    const auto zero_result = aegis::decode_order_replace(zero_payload);
+    CHECK(zero_result.has_value());
+    if (zero_result.value() != nullptr) {
+        CHECK(zero_result.value()->price_1e4 == aegis::Price4{0});
+    }
+
+    auto maximum_payload = order_replace_fixture;
+    maximum_payload[31] = std::byte{0x77};
+    maximum_payload[32] = std::byte{0x35};
+    maximum_payload[33] = std::byte{0x94};
+    maximum_payload[34] = std::byte{0x00};
+    const auto maximum_result = aegis::decode_order_replace(maximum_payload);
+    CHECK(maximum_result.has_value());
+    if (maximum_result.value() != nullptr) {
+        CHECK(maximum_result.value()->price_1e4 == aegis::kMaxPrice4);
+    }
+
+    auto oversized_payload = order_replace_fixture;
+    oversized_payload[31] = std::byte{0x77};
+    oversized_payload[32] = std::byte{0x35};
+    oversized_payload[33] = std::byte{0x94};
+    oversized_payload[34] = std::byte{0x01};
+    constexpr std::uint64_t sequence = 0x0123456789ABCDEFULL;
+    const auto oversized_result = aegis::decode_order_replace(
+        oversized_payload, aegis::ItchDecodeContext{sequence});
+    const aegis::Error* const error =
+        check_failure(oversized_result, aegis::ErrorCode::InvalidItchValue);
+    if (error != nullptr) {
+        CHECK(error->offset == 31);
+        CHECK(error->observed_value == 2'000'000'001ULL);
+        CHECK(error->limit_value == 2'000'000'000ULL);
+        CHECK(error->sequence == sequence);
+        CHECK(error->message_type == static_cast<std::uint8_t>('U'));
+        CHECK(error->message == "ITCH value exceeds permitted range");
+    }
+}
+
 }  // namespace
 
 int main()
@@ -838,5 +1328,16 @@ int main()
     test_add_order_price_boundaries();
     test_attributed_add_order_invalid_price();
     test_attributed_add_order_invalid_attribution();
+    test_order_executed_golden_fixture();
+    test_order_executed_with_price_golden_fixture();
+    test_order_cancel_golden_fixture();
+    test_order_delete_golden_fixture();
+    test_order_replace_golden_fixture();
+    test_order_event_exact_length_validation();
+    test_order_event_wrong_types();
+    test_order_executed_with_price_printable_values();
+    test_order_executed_with_price_invalid_printable_values();
+    test_order_executed_with_price_boundaries();
+    test_order_replace_price_boundaries();
     return failure_count == 0 ? 0 : 1;
 }

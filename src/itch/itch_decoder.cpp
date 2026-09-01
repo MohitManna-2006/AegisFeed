@@ -341,6 +341,66 @@ template <std::size_t Size>
     return true;
 }
 
+[[nodiscard]] bool read_printable_flag(
+    ItchReadCursor& reader,
+    const std::size_t offset,
+    const ItchDecodeContext context,
+    const std::uint8_t message_type,
+    bool& destination,
+    Error& error) noexcept
+{
+    std::uint8_t value{};
+    if (!reader.read_u8(value)) {
+        error = reader.error();
+        return false;
+    }
+
+    if (value == byte_value('Y')) {
+        destination = true;
+        return true;
+    }
+    if (value == byte_value('N')) {
+        destination = false;
+        return true;
+    }
+
+    error = Error::invalid_itch_enum(offset, value, context.sequence, message_type);
+    return false;
+}
+
+struct ExecutionFields {
+    ItchCommonHeader header{};
+    std::uint64_t order_reference{};
+    std::uint32_t executed_shares{};
+    std::uint64_t match_number{};
+};
+
+[[nodiscard]] Result<ExecutionFields> decode_execution_fields(
+    ItchReadCursor& reader,
+    const ItchDecodeContext context,
+    const std::uint8_t message_type) noexcept
+{
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<ExecutionFields>::failure(*header_result.error());
+    }
+
+    std::uint64_t order_reference{};
+    std::uint32_t executed_shares{};
+    std::uint64_t match_number{};
+    if (!reader.read_u64_be(order_reference) || !reader.read_u32_be(executed_shares) ||
+        !reader.read_u64_be(match_number)) {
+        return Result<ExecutionFields>::failure(reader.error());
+    }
+
+    return Result<ExecutionFields>::success(ExecutionFields{
+        *header_result.value(),
+        order_reference,
+        executed_shares,
+        match_number,
+    });
+}
+
 [[nodiscard]] Result<AddOrder> decode_add_order_fields(
     const std::span<const std::byte> payload,
     const ItchDecodeContext context,
@@ -583,6 +643,173 @@ Result<AddOrder> decode_add_order_with_attribution(
 
     return decode_add_order_fields(
         payload, context, message_type, kAddOrderWithAttributionLength, true);
+}
+
+Result<OrderExecuted> decode_order_executed(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('E');
+    if (payload.size() != kOrderExecutedLength) {
+        return Result<OrderExecuted>::failure(Error::invalid_itch_length(
+            kOrderExecutedLength, payload.size(), context.sequence, message_type));
+    }
+
+    ItchReadCursor reader{payload, context, message_type, kOrderExecutedLength};
+    auto fields_result = decode_execution_fields(reader, context, message_type);
+    if (!fields_result.has_value()) {
+        return Result<OrderExecuted>::failure(*fields_result.error());
+    }
+
+    const ExecutionFields& fields = *fields_result.value();
+    return Result<OrderExecuted>::success(OrderExecuted{
+        fields.header,
+        fields.order_reference,
+        fields.executed_shares,
+        fields.match_number,
+    });
+}
+
+Result<OrderExecutedWithPrice> decode_order_executed_with_price(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('C');
+    if (payload.size() != kOrderExecutedWithPriceLength) {
+        return Result<OrderExecutedWithPrice>::failure(Error::invalid_itch_length(
+            kOrderExecutedWithPriceLength,
+            payload.size(),
+            context.sequence,
+            message_type));
+    }
+
+    ItchReadCursor reader{payload, context, message_type, kOrderExecutedWithPriceLength};
+    auto fields_result = decode_execution_fields(reader, context, message_type);
+    if (!fields_result.has_value()) {
+        return Result<OrderExecutedWithPrice>::failure(*fields_result.error());
+    }
+
+    bool printable{};
+    Price4 execution_price_1e4{};
+    Error error{};
+    if (!read_printable_flag(reader, 31, context, message_type, printable, error) ||
+        !reader.read_u32_be(execution_price_1e4)) {
+        if (error.code == ErrorCode::None) {
+            error = reader.error();
+        }
+        return Result<OrderExecutedWithPrice>::failure(error);
+    }
+    if (execution_price_1e4 > kMaxPrice4) {
+        return Result<OrderExecutedWithPrice>::failure(Error::invalid_itch_value(
+            32,
+            execution_price_1e4,
+            kMaxPrice4,
+            context.sequence,
+            message_type));
+    }
+
+    const ExecutionFields& fields = *fields_result.value();
+    return Result<OrderExecutedWithPrice>::success(OrderExecutedWithPrice{
+        fields.header,
+        fields.order_reference,
+        fields.executed_shares,
+        fields.match_number,
+        printable,
+        execution_price_1e4,
+    });
+}
+
+Result<OrderCancel> decode_order_cancel(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('X');
+    if (payload.size() != kOrderCancelLength) {
+        return Result<OrderCancel>::failure(Error::invalid_itch_length(
+            kOrderCancelLength, payload.size(), context.sequence, message_type));
+    }
+
+    ItchReadCursor reader{payload, context, message_type, kOrderCancelLength};
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<OrderCancel>::failure(*header_result.error());
+    }
+
+    std::uint64_t order_reference{};
+    std::uint32_t cancelled_shares{};
+    if (!reader.read_u64_be(order_reference) || !reader.read_u32_be(cancelled_shares)) {
+        return Result<OrderCancel>::failure(reader.error());
+    }
+
+    return Result<OrderCancel>::success(OrderCancel{
+        *header_result.value(),
+        order_reference,
+        cancelled_shares,
+    });
+}
+
+Result<OrderDelete> decode_order_delete(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('D');
+    if (payload.size() != kOrderDeleteLength) {
+        return Result<OrderDelete>::failure(Error::invalid_itch_length(
+            kOrderDeleteLength, payload.size(), context.sequence, message_type));
+    }
+
+    ItchReadCursor reader{payload, context, message_type, kOrderDeleteLength};
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<OrderDelete>::failure(*header_result.error());
+    }
+
+    std::uint64_t order_reference{};
+    if (!reader.read_u64_be(order_reference)) {
+        return Result<OrderDelete>::failure(reader.error());
+    }
+
+    return Result<OrderDelete>::success(
+        OrderDelete{*header_result.value(), order_reference});
+}
+
+Result<OrderReplace> decode_order_replace(
+    const std::span<const std::byte> payload,
+    const ItchDecodeContext context) noexcept
+{
+    constexpr auto message_type = byte_value('U');
+    if (payload.size() != kOrderReplaceLength) {
+        return Result<OrderReplace>::failure(Error::invalid_itch_length(
+            kOrderReplaceLength, payload.size(), context.sequence, message_type));
+    }
+
+    ItchReadCursor reader{payload, context, message_type, kOrderReplaceLength};
+    auto header_result = decode_common_header(reader, message_type, context);
+    if (!header_result.has_value()) {
+        return Result<OrderReplace>::failure(*header_result.error());
+    }
+
+    std::uint64_t original_order_reference{};
+    std::uint64_t new_order_reference{};
+    std::uint32_t shares{};
+    Price4 price_1e4{};
+    if (!reader.read_u64_be(original_order_reference) ||
+        !reader.read_u64_be(new_order_reference) || !reader.read_u32_be(shares) ||
+        !reader.read_u32_be(price_1e4)) {
+        return Result<OrderReplace>::failure(reader.error());
+    }
+    if (price_1e4 > kMaxPrice4) {
+        return Result<OrderReplace>::failure(Error::invalid_itch_value(
+            31, price_1e4, kMaxPrice4, context.sequence, message_type));
+    }
+
+    return Result<OrderReplace>::success(OrderReplace{
+        *header_result.value(),
+        original_order_reference,
+        new_order_reference,
+        shares,
+        price_1e4,
+    });
 }
 
 }  // namespace aegis
