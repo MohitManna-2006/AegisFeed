@@ -60,4 +60,10 @@ if(BUILD_TESTING)
     aegis_enable_compiler_warnings(aegis_mold_session_test)
 
     add_test(NAME aegis.mold_session COMMAND aegis_mold_session_test)
+
+    add_executable(aegis_unique_fd_test tests/unit/unique_fd_test.cpp)
+    target_link_libraries(aegis_unique_fd_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_unique_fd_test)
+
+    add_test(NAME aegis.unique_fd COMMAND aegis_unique_fd_test)
 endif()
