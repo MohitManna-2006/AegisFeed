@@ -9,3 +9,5 @@ It replays traffic, drops packets on purpose, recovers gaps, rebuilds the order 
 `replay → drop → recover → rebuild → verify`
 
 Built for correctness first. Nanoseconds next.
+
+[Read the architecture →](./ARCHITECTURE.md)

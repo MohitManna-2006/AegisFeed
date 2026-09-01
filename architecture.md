@@ -1,15 +1,17 @@
 # AegisFeed Architecture and Engineering Specification
 
-| Field | Value |
-|---|---|
-| Project | AegisFeed |
-| Document role | Normative architecture, protocol, implementation, and delivery specification |
-| Initial release target | MVP plus portfolio-ready V1 |
-| Primary language | C++20 |
-| Primary platform | Linux x86-64 |
-| Build system | CMake |
-| Application protocols | Nasdaq TotalView-ITCH 5.0 over MoldUDP64 |
-| Intended audience | Human engineers and AI coding agents implementing the complete repository |
+
+| Field                  | Value                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| Project                | AegisFeed                                                                    |
+| Document role          | Normative architecture, protocol, implementation, and delivery specification |
+| Initial release target | MVP plus portfolio-ready V1                                                  |
+| Primary language       | C++20                                                                        |
+| Primary platform       | Linux x86-64                                                                 |
+| Build system           | CMake                                                                        |
+| Application protocols  | Nasdaq TotalView-ITCH 5.0 over MoldUDP64                                     |
+| Intended audience      | Human engineers and AI coding agents implementing the complete repository    |
+
 
 ## 1. Document purpose
 
@@ -24,6 +26,8 @@ This document uses normative requirement language:
 - **MAY** identifies an optional behavior.
 - **MVP** identifies the smallest portfolio-shippable version.
 - **V1** identifies the hardened, benchmarked, resume-ready release.
+
+
 
 ### 1.1 Instructions for AI implementers
 
@@ -40,6 +44,8 @@ An AI agent implementing this project MUST follow these rules:
 9. Treat malformed input and unresolved sequence gaps as correctness failures, not warnings.
 10. Update this document when an approved architecture decision changes externally visible behavior.
 
+
+
 ## 2. Executive summary
 
 AegisFeed is a deterministic C++20 market-data infrastructure project. It reads historical Nasdaq TotalView-ITCH 5.0 messages, packages them into MoldUDP64 datagrams, publishes those datagrams over UDP multicast, deliberately introduces controlled packet loss, detects sequence gaps at the receiver, requests retransmission over UDP unicast, rebuilds a contiguous message stream, decodes ITCH messages, reconstructs order-level books for selected symbols, and proves recovery correctness by comparing the recovered final state with a clean direct replay.
@@ -55,6 +61,8 @@ The system is not an exchange, matching engine, trading bot, brokerage client, o
 
 ## 3. Product goals
 
+
+
 ### 3.1 Primary goals
 
 1. Demonstrate correct parsing of real binary exchange messages.
@@ -66,11 +74,15 @@ The system is not an exchange, matching engine, trading bot, brokerage client, o
 7. Produce a repository that can be understood and demonstrated from a fresh clone.
 8. Provide credible interview material around networking, byte order, memory bounds, state machines, recovery, invariants, measurement, and tradeoffs.
 
+
+
 ### 3.2 Success statement
 
 AegisFeed succeeds when the following statement is true:
 
 > Given the same historical ITCH input and symbol selection, a clean direct replay and a MoldUDP64 network replay containing deterministic packet loss produce exactly the same canonical final book state, while the network replay reports zero unresolved gaps, zero invalid book transitions, and successful recovery of every requested message.
+
+
 
 ### 3.3 Educational and portfolio outcomes
 
@@ -86,7 +98,11 @@ The final project SHOULD make the following engineering knowledge visible:
 - Correctness invariants and fail-closed behavior.
 - Performance measurement that separates parser, book, network, and recovery costs.
 
+
+
 ## 4. Scope
+
+
 
 ### 4.1 In scope for MVP
 
@@ -115,6 +131,8 @@ The MVP MUST include:
 - Clear terminal summary.
 - Unit tests and sanitizer-clean execution.
 
+
+
 ### 4.2 In scope for portfolio-ready V1
 
 V1 MUST add:
@@ -134,6 +152,8 @@ V1 MUST add:
 - Architecture, protocol, recovery, and benchmark documentation.
 - A one-command demonstration script.
 
+
+
 ### 4.3 Optional stretch scope
 
 The following MAY be attempted only after V1 acceptance criteria pass:
@@ -148,6 +168,8 @@ The following MAY be attempted only after V1 acceptance criteria pass:
 - Snapshot export and deterministic restart.
 - Schema-generated ITCH codecs.
 - Additional ITCH message types that do not change MVP book semantics.
+
+
 
 ### 4.4 Explicit non-goals
 
@@ -170,6 +192,8 @@ AegisFeed MUST NOT include the following in MVP or V1:
 - DPDK, AF_XDP, RDMA, or FPGA acceleration.
 - Cross-host latency claims without clock synchronization.
 - Claims about real exchange-to-trader latency.
+
+
 
 ## 5. Normative references
 
@@ -195,16 +219,24 @@ flowchart TD
     H --> I["Metrics and state digest"]
 ```
 
+
+
+
+
 ### 6.1 Actors
 
-| Actor | Responsibility |
-|---|---|
-| Developer | Builds, configures, runs, tests, and profiles the system |
-| Replay server | Emulates an exchange multicast feed and retransmission server |
-| Feed receiver | Emulates a trading firm's market-data feed handler |
-| Direct verifier | Computes the expected final state without network transport |
-| Test harness | Injects deterministic failures and verifies invariants |
-| Benchmark harness | Measures isolated component and end-to-end performance |
+
+| Actor             | Responsibility                                                |
+| ----------------- | ------------------------------------------------------------- |
+| Developer         | Builds, configures, runs, tests, and profiles the system      |
+| Replay server     | Emulates an exchange multicast feed and retransmission server |
+| Feed receiver     | Emulates a trading firm's market-data feed handler            |
+| Direct verifier   | Computes the expected final state without network transport   |
+| Test harness      | Injects deterministic failures and verifies invariants        |
+| Benchmark harness | Measures isolated component and end-to-end performance        |
+
+
+
 
 ### 6.2 Primary use cases
 
@@ -216,183 +248,243 @@ flowchart TD
 6. Compare clean and recovered canonical final states.
 7. Benchmark the decoder, book builder, clean transport, and recovery path independently.
 
+
+
 ## 7. Functional requirements
+
+
 
 ### 7.1 Input and replay requirements
 
-| ID | Requirement |
-|---|---|
-| FR-IN-001 | The replayer MUST accept a path to a decompressed length-prefixed ITCH binary file. |
-| FR-IN-002 | The file reader MUST validate every two-byte big-endian message length before reading the payload. |
-| FR-IN-003 | A truncated length field or payload MUST terminate replay with an input-framing error. |
-| FR-IN-004 | The replayer MUST support a configurable maximum message count for fast demos and tests. |
-| FR-IN-005 | The replayer SHOULD support a start-message offset only after correct session-from-one behavior is implemented and documented. |
-| FR-IN-006 | The replayer MUST assign MoldUDP64 sequence numbers independently of ITCH tracking numbers. |
+
+| ID        | Requirement                                                                                                                                         |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-IN-001 | The replayer MUST accept a path to a decompressed length-prefixed ITCH binary file.                                                                 |
+| FR-IN-002 | The file reader MUST validate every two-byte big-endian message length before reading the payload.                                                  |
+| FR-IN-003 | A truncated length field or payload MUST terminate replay with an input-framing error.                                                              |
+| FR-IN-004 | The replayer MUST support a configurable maximum message count for fast demos and tests.                                                            |
+| FR-IN-005 | The replayer SHOULD support a start-message offset only after correct session-from-one behavior is implemented and documented.                      |
+| FR-IN-006 | The replayer MUST assign MoldUDP64 sequence numbers independently of ITCH tracking numbers.                                                         |
 | FR-IN-007 | The first application message in a replay session MUST have MoldUDP64 sequence number 1 unless an explicit recovery/restart mode is later designed. |
-| FR-IN-008 | The replayer MUST stop with an error if an ITCH payload exceeds the configured application maximum. |
+| FR-IN-008 | The replayer MUST stop with an error if an ITCH payload exceeds the configured application maximum.                                                 |
+
+
+
 
 ### 7.2 MoldUDP64 publication requirements
 
-| ID | Requirement |
-|---|---|
-| FR-MOLD-001 | The publisher MUST emit a 20-byte MoldUDP64 downstream header. |
-| FR-MOLD-002 | Session MUST occupy bytes 0 through 9. |
-| FR-MOLD-003 | First-message sequence number MUST occupy bytes 10 through 17 as an unsigned big-endian integer. |
-| FR-MOLD-004 | Message count MUST occupy bytes 18 through 19 as an unsigned big-endian integer. |
+
+| ID          | Requirement                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| FR-MOLD-001 | The publisher MUST emit a 20-byte MoldUDP64 downstream header.                                                  |
+| FR-MOLD-002 | Session MUST occupy bytes 0 through 9.                                                                          |
+| FR-MOLD-003 | First-message sequence number MUST occupy bytes 10 through 17 as an unsigned big-endian integer.                |
+| FR-MOLD-004 | Message count MUST occupy bytes 18 through 19 as an unsigned big-endian integer.                                |
 | FR-MOLD-005 | Every message block MUST contain a two-byte big-endian payload length followed by the exact ITCH payload bytes. |
-| FR-MOLD-006 | A message MUST NOT be split across MoldUDP64 datagrams. |
-| FR-MOLD-007 | Normal datagrams MUST remain at or below the configured UDP payload limit. |
-| FR-MOLD-008 | The default UDP payload limit MUST be 1,400 bytes to avoid ordinary Ethernet IP fragmentation. |
-| FR-MOLD-009 | The publisher MUST send heartbeats during configured idle periods. |
-| FR-MOLD-010 | A heartbeat MUST contain the next sequence number and a message count of zero. |
-| FR-MOLD-011 | End of session MUST use message count `0xFFFF` and the next sequence number. |
-| FR-MOLD-012 | The publisher MUST retain recovery service for a configurable grace period after input exhaustion. |
+| FR-MOLD-006 | A message MUST NOT be split across MoldUDP64 datagrams.                                                         |
+| FR-MOLD-007 | Normal datagrams MUST remain at or below the configured UDP payload limit.                                      |
+| FR-MOLD-008 | The default UDP payload limit MUST be 1,400 bytes to avoid ordinary Ethernet IP fragmentation.                  |
+| FR-MOLD-009 | The publisher MUST send heartbeats during configured idle periods.                                              |
+| FR-MOLD-010 | A heartbeat MUST contain the next sequence number and a message count of zero.                                  |
+| FR-MOLD-011 | End of session MUST use message count `0xFFFF` and the next sequence number.                                    |
+| FR-MOLD-012 | The publisher MUST retain recovery service for a configurable grace period after input exhaustion.              |
+
+
+
 
 ### 7.3 Loss injection requirements
 
-| ID | Requirement |
-|---|---|
-| FR-LOSS-001 | Loss injection MUST be deterministic for a fixed configuration and seed. |
-| FR-LOSS-002 | MVP MUST support dropping every Nth normal multicast datagram. |
-| FR-LOSS-003 | A dropped multicast datagram's messages MUST remain in the recovery cache. |
+
+| ID          | Requirement                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| FR-LOSS-001 | Loss injection MUST be deterministic for a fixed configuration and seed.                    |
+| FR-LOSS-002 | MVP MUST support dropping every Nth normal multicast datagram.                              |
+| FR-LOSS-003 | A dropped multicast datagram's messages MUST remain in the recovery cache.                  |
 | FR-LOSS-004 | Heartbeats, end-of-session messages, and recovery responses MUST NOT be dropped by default. |
-| FR-LOSS-005 | V1 SHOULD support an explicit packet-index drop list. |
-| FR-LOSS-006 | V1 MAY support seeded probabilistic loss, duplication, and delay. |
-| FR-LOSS-007 | Every injected action MUST increment a visible metric. |
+| FR-LOSS-005 | V1 SHOULD support an explicit packet-index drop list.                                       |
+| FR-LOSS-006 | V1 MAY support seeded probabilistic loss, duplication, and delay.                           |
+| FR-LOSS-007 | Every injected action MUST increment a visible metric.                                      |
+
+
+
 
 ### 7.4 Receiver and sequencing requirements
 
-| ID | Requirement |
-|---|---|
-| FR-SEQ-001 | The receiver MUST track one active ten-byte MoldUDP64 session. |
-| FR-SEQ-002 | The receiver MUST track the next application sequence number expected for ordered delivery. |
-| FR-SEQ-003 | Messages MUST reach the ITCH decoder exactly once and in strictly increasing MoldUDP64 sequence order. |
-| FR-SEQ-004 | A packet beginning above the next expected sequence MUST create or extend a gap. |
-| FR-SEQ-005 | Messages above a gap MUST be buffered and MUST NOT reach the decoder early. |
+
+| ID         | Requirement                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| FR-SEQ-001 | The receiver MUST track one active ten-byte MoldUDP64 session.                                                                      |
+| FR-SEQ-002 | The receiver MUST track the next application sequence number expected for ordered delivery.                                         |
+| FR-SEQ-003 | Messages MUST reach the ITCH decoder exactly once and in strictly increasing MoldUDP64 sequence order.                              |
+| FR-SEQ-004 | A packet beginning above the next expected sequence MUST create or extend a gap.                                                    |
+| FR-SEQ-005 | Messages above a gap MUST be buffered and MUST NOT reach the decoder early.                                                         |
 | FR-SEQ-006 | Messages below the next expected sequence MUST be treated as duplicates unless the packet partially overlaps the expected sequence. |
-| FR-SEQ-007 | For partial overlap, the receiver MUST skip the processed prefix and accept only the contiguous unseen suffix. |
-| FR-SEQ-008 | Buffered duplicate sequences MUST NOT replace already-buffered payloads unless their bytes are identical. |
-| FR-SEQ-009 | Two payloads with the same session and sequence but different bytes MUST be treated as stream corruption. |
-| FR-SEQ-010 | The reorder store MUST be bounded by message count and byte count. |
-| FR-SEQ-011 | Reorder-store exhaustion MUST fail the session rather than silently discard data. |
-| FR-SEQ-012 | End of session MUST NOT produce success while gaps or pending buffered messages remain. |
+| FR-SEQ-007 | For partial overlap, the receiver MUST skip the processed prefix and accept only the contiguous unseen suffix.                      |
+| FR-SEQ-008 | Buffered duplicate sequences MUST NOT replace already-buffered payloads unless their bytes are identical.                           |
+| FR-SEQ-009 | Two payloads with the same session and sequence but different bytes MUST be treated as stream corruption.                           |
+| FR-SEQ-010 | The reorder store MUST be bounded by message count and byte count.                                                                  |
+| FR-SEQ-011 | Reorder-store exhaustion MUST fail the session rather than silently discard data.                                                   |
+| FR-SEQ-012 | End of session MUST NOT produce success while gaps or pending buffered messages remain.                                             |
+
+
+
 
 ### 7.5 Recovery requirements
 
-| ID | Requirement |
-|---|---|
-| FR-REC-001 | The receiver MUST send a MoldUDP64 Request Packet when it detects a missing sequence range. |
-| FR-REC-002 | The request MUST use the active session, first missing sequence, and requested message count. |
+
+| ID         | Requirement                                                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| FR-REC-001 | The receiver MUST send a MoldUDP64 Request Packet when it detects a missing sequence range.                                       |
+| FR-REC-002 | The request MUST use the active session, first missing sequence, and requested message count.                                     |
 | FR-REC-003 | The receiver MUST send the request from the same UDP socket used to receive multicast so unicast responses return to that socket. |
-| FR-REC-004 | The recovery server MUST return standard MoldUDP64 downstream datagrams via UDP unicast. |
-| FR-REC-005 | A recovery response MUST contain only messages from the requested session and range. |
-| FR-REC-006 | If all requested messages do not fit in one datagram, the server MUST send only complete messages that fit. |
-| FR-REC-007 | The receiver MUST issue follow-up requests until the gap is closed or retry policy is exhausted. |
-| FR-REC-008 | Recovery requests MUST be retried after a configurable timeout. |
-| FR-REC-009 | Recovery retry exhaustion MUST fail the session. |
-| FR-REC-010 | A recovery-cache miss MUST be visible and MUST eventually fail the receiver session. |
-| FR-REC-011 | The receiver MUST tolerate a retransmitted packet arriving after the same messages were recovered another way. |
-| FR-REC-012 | The receiver MUST drain newly contiguous buffered messages immediately after advancing the expected sequence. |
+| FR-REC-004 | The recovery server MUST return standard MoldUDP64 downstream datagrams via UDP unicast.                                          |
+| FR-REC-005 | A recovery response MUST contain only messages from the requested session and range.                                              |
+| FR-REC-006 | If all requested messages do not fit in one datagram, the server MUST send only complete messages that fit.                       |
+| FR-REC-007 | The receiver MUST issue follow-up requests until the gap is closed or retry policy is exhausted.                                  |
+| FR-REC-008 | Recovery requests MUST be retried after a configurable timeout.                                                                   |
+| FR-REC-009 | Recovery retry exhaustion MUST fail the session.                                                                                  |
+| FR-REC-010 | A recovery-cache miss MUST be visible and MUST eventually fail the receiver session.                                              |
+| FR-REC-011 | The receiver MUST tolerate a retransmitted packet arriving after the same messages were recovered another way.                    |
+| FR-REC-012 | The receiver MUST drain newly contiguous buffered messages immediately after advancing the expected sequence.                     |
+
+
+
 
 ### 7.6 ITCH decoding requirements
 
-| ID | Requirement |
-|---|---|
-| FR-ITCH-001 | The decoder MUST parse integers explicitly as big-endian values. |
-| FR-ITCH-002 | The decoder MUST support unsigned 16-, 32-, 48-, and 64-bit reads. |
-| FR-ITCH-003 | The decoder MUST check payload length before reading any field. |
-| FR-ITCH-004 | The decoder MUST NOT reinterpret unaligned raw bytes as packed C++ structs. |
-| FR-ITCH-005 | Prices MUST remain unsigned fixed-point integers with four implied decimal places. |
-| FR-ITCH-006 | The decoder MUST support message types `S`, `R`, `A`, `F`, `E`, `C`, `X`, `D`, and `U`. |
-| FR-ITCH-007 | Each supported message type MUST have an exact expected payload length. |
+
+| ID          | Requirement                                                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-ITCH-001 | The decoder MUST parse integers explicitly as big-endian values.                                                                                                                                       |
+| FR-ITCH-002 | The decoder MUST support unsigned 16-, 32-, 48-, and 64-bit reads.                                                                                                                                     |
+| FR-ITCH-003 | The decoder MUST check payload length before reading any field.                                                                                                                                        |
+| FR-ITCH-004 | The decoder MUST NOT reinterpret unaligned raw bytes as packed C++ structs.                                                                                                                            |
+| FR-ITCH-005 | Prices MUST remain unsigned fixed-point integers with four implied decimal places.                                                                                                                     |
+| FR-ITCH-006 | The decoder MUST support message types `S`, `R`, `A`, `F`, `E`, `C`, `X`, `D`, and `U`.                                                                                                                |
+| FR-ITCH-007 | Each supported message type MUST have an exact expected payload length.                                                                                                                                |
 | FR-ITCH-008 | The decoder MUST recognize the official book-neutral message registry in Section 13.10 so real ITCH sessions can be replayed without treating documented administrative and trade messages as unknown. |
-| FR-ITCH-009 | Unknown message types MUST fail by default. |
-| FR-ITCH-010 | The decoder MUST produce a typed event or typed administrative result, not a loosely typed string map. |
+| FR-ITCH-009 | Unknown message types MUST fail by default.                                                                                                                                                            |
+| FR-ITCH-010 | The decoder MUST produce a typed event or typed administrative result, not a loosely typed string map.                                                                                                 |
+
+
+
 
 ### 7.7 Order-book requirements
 
-| ID | Requirement |
-|---|---|
-| FR-BOOK-001 | The system MUST reconstruct active displayed orders for configured symbols. |
-| FR-BOOK-002 | The system MUST maintain aggregate displayed shares and order count per price level. |
-| FR-BOOK-003 | The system MUST maintain best bid and best ask when the relevant side is non-empty. |
-| FR-BOOK-004 | An Add Order MUST fail if its order reference is already active. |
-| FR-BOOK-005 | An execution or cancellation MUST fail if its share count exceeds remaining displayed shares. |
-| FR-BOOK-006 | An order reaching zero shares MUST be removed from the active-order index and price level. |
-| FR-BOOK-007 | An empty price level MUST be removed. |
-| FR-BOOK-008 | A Delete MUST remove all remaining displayed shares. |
-| FR-BOOK-009 | A Replace MUST remove the original order and add the new order with inherited side, symbol, and attribution. |
+
+| ID          | Requirement                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-BOOK-001 | The system MUST reconstruct active displayed orders for configured symbols.                                                                |
+| FR-BOOK-002 | The system MUST maintain aggregate displayed shares and order count per price level.                                                       |
+| FR-BOOK-003 | The system MUST maintain best bid and best ask when the relevant side is non-empty.                                                        |
+| FR-BOOK-004 | An Add Order MUST fail if its order reference is already active.                                                                           |
+| FR-BOOK-005 | An execution or cancellation MUST fail if its share count exceeds remaining displayed shares.                                              |
+| FR-BOOK-006 | An order reaching zero shares MUST be removed from the active-order index and price level.                                                 |
+| FR-BOOK-007 | An empty price level MUST be removed.                                                                                                      |
+| FR-BOOK-008 | A Delete MUST remove all remaining displayed shares.                                                                                       |
+| FR-BOOK-009 | A Replace MUST remove the original order and add the new order with inherited side, symbol, and attribution.                               |
 | FR-BOOK-010 | For an Executed With Price message, displayed shares MUST be removed from the original resting price level, not the execution-price level. |
-| FR-BOOK-011 | Book mutation MUST occur only after ordered MoldUDP64 delivery and successful ITCH decoding. |
-| FR-BOOK-012 | Book state MUST be deterministic for identical ordered input and configuration. |
+| FR-BOOK-011 | Book mutation MUST occur only after ordered MoldUDP64 delivery and successful ITCH decoding.                                               |
+| FR-BOOK-012 | Book state MUST be deterministic for identical ordered input and configuration.                                                            |
+
+
+
 
 ### 7.8 Verification and output requirements
 
-| ID | Requirement |
-|---|---|
-| FR-VER-001 | The project MUST provide a direct non-network replay path. |
-| FR-VER-002 | Direct and network paths MUST use the same symbol selection and book semantics. |
-| FR-VER-003 | The system MUST produce a canonical final state digest. |
-| FR-VER-004 | Success MUST require equal clean and recovered digests in the integration demo. |
-| FR-VER-005 | Success MUST require zero unresolved gaps and zero invalid book mutations. |
+
+| ID         | Requirement                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-VER-001 | The project MUST provide a direct non-network replay path.                                                                                             |
+| FR-VER-002 | Direct and network paths MUST use the same symbol selection and book semantics.                                                                        |
+| FR-VER-003 | The system MUST produce a canonical final state digest.                                                                                                |
+| FR-VER-004 | Success MUST require equal clean and recovered digests in the integration demo.                                                                        |
+| FR-VER-005 | Success MUST require zero unresolved gaps and zero invalid book mutations.                                                                             |
 | FR-VER-006 | The summary MUST distinguish received datagrams, received messages, duplicate messages, buffered messages, requested messages, and recovered messages. |
-| FR-VER-007 | The summary MUST report configuration and dataset bounds needed to reproduce the run. |
+| FR-VER-007 | The summary MUST report configuration and dataset bounds needed to reproduce the run.                                                                  |
+
+
+
 
 ## 8. Non-functional requirements
 
+
+
 ### 8.1 Correctness
 
-| ID | Requirement |
-|---|---|
-| NFR-COR-001 | Correctness takes priority over throughput and latency. |
-| NFR-COR-002 | The system MUST fail closed on unresolved stream corruption. |
-| NFR-COR-003 | Debug builds MUST enable internal invariant checking. |
+
+| ID          | Requirement                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| NFR-COR-001 | Correctness takes priority over throughput and latency.                                        |
+| NFR-COR-002 | The system MUST fail closed on unresolved stream corruption.                                   |
+| NFR-COR-003 | Debug builds MUST enable internal invariant checking.                                          |
 | NFR-COR-004 | Release builds MUST preserve boundary validation and externally observable correctness checks. |
-| NFR-COR-005 | Tests MUST be deterministic and MUST NOT depend on public network availability. |
+| NFR-COR-005 | Tests MUST be deterministic and MUST NOT depend on public network availability.                |
+
+
+
 
 ### 8.2 Performance
 
-| ID | Requirement |
-|---|---|
-| NFR-PERF-001 | Normal ordered delivery SHOULD avoid per-message heap allocation after initialization. |
-| NFR-PERF-002 | Recovery-path allocation MAY occur within documented bounds. |
-| NFR-PERF-003 | Logging MUST NOT run per message in normal benchmark mode. |
-| NFR-PERF-004 | Performance claims MUST identify hardware, compiler, build type, flags, workload, and run count. |
-| NFR-PERF-005 | Average latency alone MUST NOT be used as the primary latency claim. |
+
+| ID           | Requirement                                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| NFR-PERF-001 | Normal ordered delivery SHOULD avoid per-message heap allocation after initialization.                                  |
+| NFR-PERF-002 | Recovery-path allocation MAY occur within documented bounds.                                                            |
+| NFR-PERF-003 | Logging MUST NOT run per message in normal benchmark mode.                                                              |
+| NFR-PERF-004 | Performance claims MUST identify hardware, compiler, build type, flags, workload, and run count.                        |
+| NFR-PERF-005 | Average latency alone MUST NOT be used as the primary latency claim.                                                    |
 | NFR-PERF-006 | Throughput, parser latency, book latency, end-to-end processing latency, and recovery time MUST be reported separately. |
+
+
+
 
 ### 8.3 Resource bounds
 
-| ID | Requirement |
-|---|---|
-| NFR-RES-001 | Retransmission cache capacity MUST be finite and configurable. |
-| NFR-RES-002 | Reorder-store message count and bytes MUST be finite and configurable. |
-| NFR-RES-003 | Maximum ITCH application payload MUST be finite and validated. |
-| NFR-RES-004 | UDP payload size MUST be finite and validated against header and message requirements. |
+
+| ID          | Requirement                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| NFR-RES-001 | Retransmission cache capacity MUST be finite and configurable.                                |
+| NFR-RES-002 | Reorder-store message count and bytes MUST be finite and configurable.                        |
+| NFR-RES-003 | Maximum ITCH application payload MUST be finite and validated.                                |
+| NFR-RES-004 | UDP payload size MUST be finite and validated against header and message requirements.        |
 | NFR-RES-005 | The receiver MUST expose overflow counters and terminate on correctness-threatening overflow. |
+
+
+
 
 ### 8.4 Portability and build
 
-| ID | Requirement |
-|---|---|
-| NFR-BUILD-001 | MVP and V1 MUST target Linux. |
-| NFR-BUILD-002 | Production code MUST compile as C++20 with GCC and Clang. |
-| NFR-BUILD-003 | The build MUST support Debug, Release, and sanitizer configurations. |
+
+| ID            | Requirement                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| NFR-BUILD-001 | MVP and V1 MUST target Linux.                                                                           |
+| NFR-BUILD-002 | Production code MUST compile as C++20 with GCC and Clang.                                               |
+| NFR-BUILD-003 | The build MUST support Debug, Release, and sanitizer configurations.                                    |
 | NFR-BUILD-004 | Production runtime code SHOULD depend only on the C++ standard library and POSIX/Linux networking APIs. |
-| NFR-BUILD-005 | CI MUST not require historical Nasdaq data. |
+| NFR-BUILD-005 | CI MUST not require historical Nasdaq data.                                                             |
+
+
+
 
 ### 8.5 Maintainability
 
-| ID | Requirement |
-|---|---|
+
+| ID            | Requirement                                                                         |
+| ------------- | ----------------------------------------------------------------------------------- |
 | NFR-MAINT-001 | Protocol parsing, transport sequencing, and book mutation MUST be separate modules. |
-| NFR-MAINT-002 | Public interfaces MUST express ownership and lifetime. |
-| NFR-MAINT-003 | Raw socket descriptors MUST be owned by RAII wrappers. |
-| NFR-MAINT-004 | The hot path MUST not throw exceptions. |
-| NFR-MAINT-005 | Configuration defaults MUST exist in one canonical definition. |
-| NFR-MAINT-006 | Requirement-affecting changes MUST update tests and documentation. |
+| NFR-MAINT-002 | Public interfaces MUST express ownership and lifetime.                              |
+| NFR-MAINT-003 | Raw socket descriptors MUST be owned by RAII wrappers.                              |
+| NFR-MAINT-004 | The hot path MUST not throw exceptions.                                             |
+| NFR-MAINT-005 | Configuration defaults MUST exist in one canonical definition.                      |
+| NFR-MAINT-006 | Requirement-affecting changes MUST update tests and documentation.                  |
+
+
+
 
 ## 9. Platform and engineering constraints
+
+
 
 ### 9.1 Supported platform
 
@@ -401,6 +493,8 @@ flowchart TD
 - GCC and Clang are required compiler families.
 - macOS MAY be used for editing, but it is not an acceptance-test platform because Linux-specific receive batching, busy polling, and performance tooling differ.
 - Windows is out of scope.
+
+
 
 ### 9.2 C++ constraints
 
@@ -411,6 +505,8 @@ flowchart TD
 - `std::span<const std::byte>` SHOULD represent borrowed packet data.
 - `std::chrono::steady_clock` MUST be used for local elapsed-time measurement.
 - ITCH timestamps MUST NOT be treated as local arrival timestamps.
+
+
 
 ### 9.3 Dependency policy
 
@@ -437,22 +533,28 @@ flowchart LR
     end
 ```
 
+
+
 Default network values:
 
-| Setting | Default |
-|---|---|
-| Multicast IPv4 group | `239.10.10.1` |
-| Downstream port | `18000` |
-| Recovery server address | `127.0.0.1` |
-| Recovery server port | `18001` |
-| Multicast TTL | `1` |
-| Multicast loopback | enabled |
-| Session | `AEGIS00001` |
-| Maximum UDP payload | `1400` bytes |
+
+| Setting                 | Default       |
+| ----------------------- | ------------- |
+| Multicast IPv4 group    | `239.10.10.1` |
+| Downstream port         | `18000`       |
+| Recovery server address | `127.0.0.1`   |
+| Recovery server port    | `18001`       |
+| Multicast TTL           | `1`           |
+| Multicast loopback      | enabled       |
+| Session                 | `AEGIS00001`  |
+| Maximum UDP payload     | `1400` bytes  |
+
 
 The system MAY run across two hosts on the same network, but V1 MUST NOT make cross-host latency claims unless clock synchronization is explicitly designed and documented.
 
 ## 11. Process and threading model
+
+
 
 ### 11.1 Normative MVP model
 
@@ -487,6 +589,8 @@ This design avoids a mutex on every cached message and keeps loss injection repr
 11. Observe heartbeat and end-of-session state.
 12. Finalize only after the end marker is known and all preceding messages are processed.
 
+
+
 ### 11.2 Why the feed hot path is single-threaded
 
 The single-thread design is intentional:
@@ -518,6 +622,8 @@ single book-owner thread
 The split path MUST produce the same digest and pass the same recovery tests. Its benchmark MUST include the queue and scheduling cost. The project MUST report the measured result even if the split version is slower.
 
 ## 12. Wire protocol design
+
+
 
 ### 12.1 Byte-order rules
 
@@ -559,6 +665,8 @@ The input reader MUST:
 6. Return a borrowed or copied payload with a stable lifetime through packetization.
 7. Detect clean end-of-file only between messages.
 
+
+
 ### 12.3 MoldUDP64 downstream datagram layout
 
 ```text
@@ -586,6 +694,8 @@ Block 1 sequence: 1001
 Block 2 sequence: 1002
 Next expected:    1003
 ```
+
+
 
 ### 12.4 MoldUDP64 request packet layout
 
@@ -662,6 +772,8 @@ The receiver MUST finalize only when:
 - No recovery request remains outstanding.
 - No fatal decode or book error occurred.
 
+
+
 ### 12.9 Recovery response packing
 
 The recovery server MUST use standard downstream datagrams, not a custom response type.
@@ -696,16 +808,20 @@ Malformed datagrams MUST NOT partially mutate sequence or book state.
 
 ## 13. ITCH 5.0 application protocol scope
 
+
+
 ### 13.1 Common header fields
 
 Every required ITCH message begins with:
 
-| Offset | Length | Field |
-|---:|---:|---|
-| 0 | 1 | Message type |
-| 1 | 2 | Stock locate |
-| 3 | 2 | Tracking number |
-| 5 | 6 | Timestamp in nanoseconds since midnight |
+
+| Offset | Length | Field                                   |
+| ------ | ------ | --------------------------------------- |
+| 0      | 1      | Message type                            |
+| 1      | 2      | Stock locate                            |
+| 3      | 2      | Tracking number                         |
+| 5      | 6      | Timestamp in nanoseconds since midnight |
+
 
 The stock-locate code is not stable across trading days. It MUST be populated from the current session's Stock Directory messages.
 
@@ -713,17 +829,19 @@ The ITCH tracking number is Nasdaq internal metadata. It MUST NOT be used as the
 
 ### 13.2 Required message registry
 
-| Type | Name | Exact bytes | MVP action |
-|---|---|---:|---|
-| `S` | System Event | 12 | Track session event code and metrics |
-| `R` | Stock Directory | 39 | Map stock locate to normalized symbol |
-| `A` | Add Order, no MPID | 36 | Add selected-symbol order |
-| `F` | Add Order with MPID | 40 | Add selected-symbol order and attribution |
-| `E` | Order Executed | 31 | Reduce resting order shares |
-| `C` | Order Executed With Price | 36 | Reduce resting shares and record execution metadata |
-| `X` | Order Cancel | 23 | Partially reduce resting shares |
-| `D` | Order Delete | 19 | Remove resting order |
-| `U` | Order Replace | 35 | Replace order ID, quantity, and price |
+
+| Type | Name                      | Exact bytes | MVP action                                          |
+| ---- | ------------------------- | ----------- | --------------------------------------------------- |
+| `S`  | System Event              | 12          | Track session event code and metrics                |
+| `R`  | Stock Directory           | 39          | Map stock locate to normalized symbol               |
+| `A`  | Add Order, no MPID        | 36          | Add selected-symbol order                           |
+| `F`  | Add Order with MPID       | 40          | Add selected-symbol order and attribution           |
+| `E`  | Order Executed            | 31          | Reduce resting order shares                         |
+| `C`  | Order Executed With Price | 36          | Reduce resting shares and record execution metadata |
+| `X`  | Order Cancel              | 23          | Partially reduce resting shares                     |
+| `D`  | Order Delete              | 19          | Remove resting order                                |
+| `U`  | Order Replace             | 35          | Replace order ID, quantity, and price               |
+
 
 The decoder MUST check exact payload length before reading fields.
 
@@ -787,6 +905,8 @@ struct OrderReplace {
 };
 ```
 
+
+
 ### 13.4 Add Order semantics
 
 For `A` and `F`:
@@ -826,6 +946,8 @@ For `X`:
 4. Reduce order and price-level shares.
 5. Remove the order and empty level if remaining shares reach zero.
 
+
+
 ### 13.7 Delete semantics
 
 For `D`:
@@ -835,6 +957,8 @@ For `D`:
 3. Decrement level order count.
 4. Remove the order.
 5. Remove an empty level.
+
+
 
 ### 13.8 Replace semantics
 
@@ -868,22 +992,24 @@ The decoder MUST distinguish `known_book_neutral` from `unknown`.
 
 The following current ITCH 5.0 messages are structurally recognized in MVP even though they do not mutate the displayed order book maintained by AegisFeed:
 
-| Type | Name | Exact bytes | AegisFeed behavior |
-|---|---|---:|---|
-| `H` | Stock Trading Action | 25 | Validate, count, optionally record trading state |
-| `Y` | Reg SHO Restriction | 20 | Validate and count |
-| `L` | Market Participant Position | 26 | Validate and count |
-| `V` | MWCB Decline Level | 35 | Validate and count |
-| `W` | MWCB Status | 12 | Validate and count |
-| `K` | IPO Quoting Period Update | 28 | Validate and count |
-| `J` | LULD Auction Collar | 35 | Validate and count |
-| `h` | Operational Halt | 21 | Validate and count |
-| `P` | Trade, non-cross | 44 | Validate and count; no displayed-book mutation |
-| `Q` | Cross Trade | 40 | Validate and count; no displayed-book mutation |
-| `B` | Broken Trade | 19 | Validate and count; no current-book mutation |
-| `I` | Net Order Imbalance Indicator | 50 | Validate and count |
-| `N` | Retail Price Improvement Indicator | 20 | Validate and count |
-| `O` | Direct Listing With Capital Raise Price Discovery | 48 | Validate and count |
+
+| Type | Name                                              | Exact bytes | AegisFeed behavior                               |
+| ---- | ------------------------------------------------- | ----------- | ------------------------------------------------ |
+| `H`  | Stock Trading Action                              | 25          | Validate, count, optionally record trading state |
+| `Y`  | Reg SHO Restriction                               | 20          | Validate and count                               |
+| `L`  | Market Participant Position                       | 26          | Validate and count                               |
+| `V`  | MWCB Decline Level                                | 35          | Validate and count                               |
+| `W`  | MWCB Status                                       | 12          | Validate and count                               |
+| `K`  | IPO Quoting Period Update                         | 28          | Validate and count                               |
+| `J`  | LULD Auction Collar                               | 35          | Validate and count                               |
+| `h`  | Operational Halt                                  | 21          | Validate and count                               |
+| `P`  | Trade, non-cross                                  | 44          | Validate and count; no displayed-book mutation   |
+| `Q`  | Cross Trade                                       | 40          | Validate and count; no displayed-book mutation   |
+| `B`  | Broken Trade                                      | 19          | Validate and count; no current-book mutation     |
+| `I`  | Net Order Imbalance Indicator                     | 50          | Validate and count                               |
+| `N`  | Retail Price Improvement Indicator                | 20          | Validate and count                               |
+| `O`  | Direct Listing With Capital Raise Price Discovery | 48          | Validate and count                               |
+
 
 This table reflects the current official ITCH 5.0 specification referenced in Section 5. Exact lengths MUST be covered by tests. If the official protocol introduces a new type, strict mode MUST fail until the registry and tests are deliberately updated.
 
@@ -908,6 +1034,10 @@ flowchart TD
         RM --> RR
     end
 ```
+
+
+
+
 
 ### 14.1 `ByteReader` and `ByteWriter`
 
@@ -949,6 +1079,8 @@ struct InputMessage {
     std::array<std::byte, kMaxItchMessageBytes> bytes;
 };
 ```
+
+
 
 ### 14.3 `MoldPacketizer`
 
@@ -1156,6 +1288,8 @@ Normalization:
 - Reject embedded nulls in strict mode.
 - Compare CLI symbols after normalization to uppercase ASCII.
 
+
+
 ### 14.15 `BookStore`
 
 Responsibilities:
@@ -1247,6 +1381,8 @@ Metrics MUST distinguish datagrams from application messages.
 
 ## 15. Sequencing and recovery algorithm
 
+
+
 ### 15.1 Receiver lifecycle states
 
 ```mermaid
@@ -1264,6 +1400,10 @@ stateDiagram-v2
     Complete --> [*]
     Failed --> [*]
 ```
+
+
+
+
 
 ### 15.2 Bootstrap behavior
 
@@ -1290,22 +1430,21 @@ expected = next_expected_sequence
 Cases:
 
 1. `packet_end_exclusive <= expected`
-   - Entire datagram is duplicate or stale.
-   - Validate framing, count duplicates, apply nothing.
-
+  - Entire datagram is duplicate or stale.
+  - Validate framing, count duplicates, apply nothing.
 2. `packet_start < expected < packet_end_exclusive`
-   - Skip `expected - packet_start` message blocks.
-   - Process remaining messages as if packet started at expected.
-
+  - Skip `expected - packet_start` message blocks.
+  - Process remaining messages as if packet started at expected.
 3. `packet_start == expected`
-   - Deliver each message in order.
-   - Increment expected after each successful delivery.
-   - Drain pending store.
-
+  - Deliver each message in order.
+  - Increment expected after each successful delivery.
+  - Drain pending store.
 4. `packet_start > expected`
-   - A gap exists `[expected, packet_start)`.
-   - Copy each datagram message into pending storage by sequence.
-   - Start or maintain recovery for the earliest gap.
+  - A gap exists `[expected, packet_start)`.
+  - Copy each datagram message into pending storage by sequence.
+  - Start or maintain recovery for the earliest gap.
+
+
 
 ### 15.4 Delivery transaction boundary
 
@@ -1329,6 +1468,8 @@ When buffering sequence `s`:
 - If no entry exists, validate capacity then copy payload.
 - If an entry exists with identical length and bytes, count duplicate and ignore.
 - If an entry exists with different bytes, fail with conflicting-sequence corruption.
+
+
 
 ### 15.6 Pending drain
 
@@ -1360,13 +1501,15 @@ If no pending message exists but a heartbeat or end marker shows a higher next s
 
 Default policy:
 
-| Setting | Default |
-|---|---:|
-| Request timeout | 10 ms |
-| Maximum attempts per current request start | 5 |
-| Maximum request count | 4,096 messages |
-| Maximum pending messages | 65,536 |
-| Maximum pending bytes | 8 MiB |
+
+| Setting                                    | Default        |
+| ------------------------------------------ | -------------- |
+| Request timeout                            | 10 ms          |
+| Maximum attempts per current request start | 5              |
+| Maximum request count                      | 4,096 messages |
+| Maximum pending messages                   | 65,536         |
+| Maximum pending bytes                      | 8 MiB          |
+
 
 The receiver event loop MUST wake often enough to evaluate a retry timeout even when no datagrams arrive. `poll`, `ppoll`, or a receive timeout is acceptable. A permanently blocking `recvfrom` without timeout handling is not.
 
@@ -1390,7 +1533,11 @@ If an end marker announces sequence `end_sequence`:
 - If `end_sequence > expected`, record end sequence and recover the missing range.
 - If another end marker for the same session reports a different end sequence, fail with session corruption.
 
+
+
 ## 16. Order-book data model
+
+
 
 ### 16.1 Core types
 
@@ -1438,12 +1585,16 @@ For each active order:
 - Its side matches the side collection containing the level.
 - Its stock locate maps to the containing symbol.
 
+
+
 ### 16.4 Best-price semantics
 
 - Best bid is the highest active bid price.
 - Best ask is the lowest active ask price.
 - An empty side has no best price and MUST be represented with an optional, not a zero price.
 - The project SHOULD NOT assert that best bid is always below best ask because administrative state and partial datasets can make that invariant unsafe for this scope.
+
+
 
 ### 16.5 Symbol-selection behavior
 
@@ -1456,7 +1607,11 @@ For an ITCH message with a stock locate:
 - If a modification message references a selected locate, the order MUST exist in that selected book.
 - If a requested symbol never appears in Stock Directory before session completion, report it as missing and fail verification unless `--allow-missing-symbols` is explicitly enabled for a test.
 
+
+
 ## 17. Configuration design
+
+
 
 ### 17.1 `aegis_replay` CLI
 
@@ -1484,6 +1639,8 @@ Required or defaulted options:
 --verbose
 ```
 
+
+
 ### 17.2 `aegis_feed` CLI
 
 ```text
@@ -1508,6 +1665,8 @@ Required or defaulted options:
 --verbose
 ```
 
+
+
 ### 17.3 Configuration validation
 
 Validation occurs before sockets or large buffers are created. Reject:
@@ -1525,7 +1684,11 @@ Validation occurs before sockets or large buffers are created. Reject:
 - Contradictory quiet and verbose modes.
 - Negative or overflowing numeric CLI inputs.
 
+
+
 ## 18. Error model and exit codes
+
+
 
 ### 18.1 Error categories
 
@@ -1559,20 +1722,26 @@ Every fatal error SHOULD include:
 - File offset when known.
 - Relevant limit and observed value.
 
+
+
 ### 18.2 Exit codes
 
-| Code | Meaning |
-|---:|---|
-| 0 | Successful completion |
-| 2 | Configuration or CLI error |
-| 3 | Input I/O or framing error |
-| 4 | Socket or network error |
-| 5 | MoldUDP64 or ITCH protocol error |
-| 6 | Sequence or recovery failure |
-| 7 | Book invariant failure |
-| 8 | Verification or digest mismatch |
-| 9 | Resource-limit failure |
-| 10 | Internal invariant failure |
+
+| Code | Meaning                          |
+| ---- | -------------------------------- |
+| 0    | Successful completion            |
+| 2    | Configuration or CLI error       |
+| 3    | Input I/O or framing error       |
+| 4    | Socket or network error          |
+| 5    | MoldUDP64 or ITCH protocol error |
+| 6    | Sequence or recovery failure     |
+| 7    | Book invariant failure           |
+| 8    | Verification or digest mismatch  |
+| 9    | Resource-limit failure           |
+| 10   | Internal invariant failure       |
+
+
+
 
 ### 18.3 Logging policy
 
@@ -1583,7 +1752,11 @@ Every fatal error SHOULD include:
 - Logs MUST label datagrams and messages correctly.
 - Sensitive credentials do not exist in this project and MUST NOT be introduced.
 
+
+
 ## 19. Observability and reporting
+
+
 
 ### 19.1 Periodic status
 
@@ -1592,6 +1765,8 @@ Optional periodic output MAY include:
 ```text
 session=AEGIS00001 expected=1250001 rx_msg=1249988 pending=12 gaps=3 recovered=27 rate=1.82Mmsg/s
 ```
+
+
 
 ### 19.2 Final summary
 
@@ -1627,6 +1802,8 @@ The output MUST NOT print a successful integrity result merely because the proce
 
 ## 20. Performance measurement design
 
+
+
 ### 20.1 Measurement principles
 
 1. Correctness tests and performance benchmarks are separate modes.
@@ -1637,6 +1814,8 @@ The output MUST NOT print a successful integrity result merely because the proce
 6. Tool overhead is documented.
 7. No exchange-latency claim is made from historical ITCH timestamps.
 8. VM and shared-host noise is acknowledged.
+
+
 
 ### 20.2 Decoder microbenchmark
 
@@ -1658,6 +1837,8 @@ Excludes:
 - UDP.
 - Sequencing.
 - Book mutation.
+
+
 
 ### 20.3 Book microbenchmark
 
@@ -1712,6 +1893,8 @@ Measures:
 - Time from gap detection until contiguous live state resumes.
 - Final digest equality.
 
+
+
 ### 20.6 Percentiles
 
 Per-message clock reads can distort the hot path. V1 SHOULD use one of:
@@ -1742,6 +1925,8 @@ Every committed benchmark result MUST state:
 - Warm-up length.
 - Timed runs and aggregation method.
 
+
+
 ## 21. Security and robustness considerations
 
 AegisFeed is a local portfolio system, but it processes untrusted binary input and UDP datagrams. It MUST be robust against malformed data.
@@ -1756,6 +1941,8 @@ AegisFeed is a local portfolio system, but it processes untrusted binary input a
 - Do not trust message count without walking all blocks.
 - Do not allocate memory directly proportional to an unvalidated network field.
 
+
+
 ### 21.2 Network safety
 
 - Ignore or count wrong-session packets according to strict configuration.
@@ -1764,6 +1951,8 @@ AegisFeed is a local portfolio system, but it processes untrusted binary input a
 - Bound retries.
 - Validate recovery response bytes exactly like multicast bytes.
 - Treat conflicting same-sequence payloads as corruption.
+
+
 
 ### 21.3 Denial-of-service boundaries
 
@@ -1782,6 +1971,8 @@ Fuzzing MUST run with sanitizers. A short deterministic fuzz corpus MAY run in C
 
 ## 22. Testing strategy
 
+
+
 ### 22.1 Test pyramid
 
 ```mermaid
@@ -1792,6 +1983,10 @@ flowchart TD
     A --> B
     B --> C
 ```
+
+
+
+
 
 ### 22.2 Byte primitive tests
 
@@ -1805,6 +2000,8 @@ Required cases:
 - Offset overflow attempts.
 - 48-bit timestamp reads.
 - ASCII right-padding behavior.
+
+
 
 ### 22.3 MoldUDP64 unit tests
 
@@ -1838,6 +2035,8 @@ For each required type:
 - Test invalid side or printable flag where applicable.
 - Test maximum fixed-width values where meaningful.
 
+
+
 ### 22.5 Book unit tests
 
 Required scenarios:
@@ -1864,6 +2063,8 @@ Required scenarios:
 - Replace to active new ID failure.
 - Aggregate invariant recomputation.
 
+
+
 ### 22.6 Sequencer unit tests
 
 Required scenarios:
@@ -1886,6 +2087,8 @@ Required scenarios:
 - End marker with gap.
 - Conflicting end markers.
 
+
+
 ### 22.7 Integration tests
 
 All integration tests use committed synthetic fixtures and loopback sockets or an in-process socket harness.
@@ -1902,6 +2105,8 @@ Required tests:
 8. Wrong session is rejected.
 9. Malformed recovery response is rejected.
 10. Missing requested symbol is reported.
+
+
 
 ### 22.8 Independent reference oracle
 
@@ -1924,6 +2129,8 @@ Required CI or documented commands:
 - Compiler warnings treated as errors for project code.
 - Optional ThreadSanitizer only if the stretch split pipeline is added.
 - Optional clang-tidy profile.
+
+
 
 ## 23. Repository architecture
 
@@ -2034,6 +2241,8 @@ Exit gate:
 - Empty smoke tests run through CTest.
 - No architecture-dependent protocol code exists yet.
 
+
+
 ### Phase 1: Binary primitives and error model
 
 Deliverables:
@@ -2050,6 +2259,8 @@ Exit gate:
 - All endian and truncation tests pass.
 - Sanitizers pass.
 - No raw packet cast exists.
+
+
 
 ### Phase 2: ITCH decoder and synthetic fixtures
 
@@ -2069,6 +2280,8 @@ Exit gate:
 - Invalid enums fail.
 - Price remains fixed point.
 
+
+
 ### Phase 3: Book model
 
 Deliverables:
@@ -2087,6 +2300,8 @@ Exit gate:
 - Random valid synthetic event sequences preserve invariants.
 - Invalid mutations fail without partial state changes.
 
+
+
 ### Phase 4: Direct replay and oracle
 
 Deliverables:
@@ -2103,6 +2318,8 @@ Exit gate:
 - C++ and Python exact canonical states match for fixture.
 - Truncated input fails correctly.
 - Repeated direct runs produce identical digest and totals.
+
+
 
 ### Phase 5: Clean MoldUDP64 transport
 
@@ -2125,6 +2342,8 @@ Exit gate:
 - Multi-message datagrams sequence correctly.
 - Heartbeat does not advance application sequence.
 - Clean end-of-session completes.
+
+
 
 ### Phase 6: Loss injection and recovery
 
@@ -2170,6 +2389,8 @@ Exit gate:
 - Every fatal class produces a stable nonzero exit.
 - No run reports PASS with an unresolved gap.
 
+
+
 ### Phase 8: Benchmarking and portfolio polish
 
 Deliverables:
@@ -2194,25 +2415,31 @@ This is the portfolio-ready V1 gate.
 
 ## 25. MVP, V1, and stretch matrix
 
-| Capability | MVP | V1 | Stretch |
-|---|:---:|:---:|:---:|
-| Required ITCH messages | Yes | Yes | More types optional |
-| Historical direct replay | Yes | Yes | Full-session indexing optional |
-| MoldUDP64 multicast | Yes | Yes | Multi-channel optional |
-| Deterministic drop | Yes | Yes | Seeded delay/reorder optional |
-| Re-request recovery | Yes | Yes | Multiple servers optional |
-| Duplicate handling | Basic | Hardened | Cross-channel arbitration optional |
-| Bounded pending store | Yes | Yes | Custom allocator optional |
-| Clean versus recovered digest | Yes | Yes | Snapshot/restart optional |
-| GCC and Clang CI | Basic | Required | More compilers optional |
-| ASan and UBSan | Required | Required | Fuzz farm optional |
-| Benchmarks | Basic throughput | Full suite | Busy-poll and split-mode comparisons |
-| Single-thread feed path | Required | Required baseline | SPSC split experiment optional |
-| GUI or web dashboard | No | No | No |
-| Trading strategy | No | No | No |
-| DPDK or FPGA | No | No | Out of project scope |
+
+| Capability                    | MVP              | V1                | Stretch                              |
+| ----------------------------- | ---------------- | ----------------- | ------------------------------------ |
+| Required ITCH messages        | Yes              | Yes               | More types optional                  |
+| Historical direct replay      | Yes              | Yes               | Full-session indexing optional       |
+| MoldUDP64 multicast           | Yes              | Yes               | Multi-channel optional               |
+| Deterministic drop            | Yes              | Yes               | Seeded delay/reorder optional        |
+| Re-request recovery           | Yes              | Yes               | Multiple servers optional            |
+| Duplicate handling            | Basic            | Hardened          | Cross-channel arbitration optional   |
+| Bounded pending store         | Yes              | Yes               | Custom allocator optional            |
+| Clean versus recovered digest | Yes              | Yes               | Snapshot/restart optional            |
+| GCC and Clang CI              | Basic            | Required          | More compilers optional              |
+| ASan and UBSan                | Required         | Required          | Fuzz farm optional                   |
+| Benchmarks                    | Basic throughput | Full suite        | Busy-poll and split-mode comparisons |
+| Single-thread feed path       | Required         | Required baseline | SPSC split experiment optional       |
+| GUI or web dashboard          | No               | No                | No                                   |
+| Trading strategy              | No               | No                | No                                   |
+| DPDK or FPGA                  | No               | No                | Out of project scope                 |
+
+
+
 
 ## 26. Acceptance criteria and definition of done
+
+
 
 ### 26.1 MVP definition of done
 
@@ -2237,6 +2464,8 @@ All items MUST be true:
 - [ ] ASan and UBSan runs pass.
 - [ ] One demo command reproduces the recovery PASS.
 
+
+
 ### 26.2 V1 definition of done
 
 In addition to MVP:
@@ -2252,6 +2481,8 @@ In addition to MVP:
 - [ ] No historical market-data file is committed.
 - [ ] A tagged release can be built from a fresh clone.
 - [ ] Resume bullets use only measured, reproducible numbers.
+
+
 
 ## 27. Required demo experience
 
@@ -2273,6 +2504,8 @@ The script SHOULD:
 6. Wait for both processes.
 7. Print the receiver summary.
 8. Exit zero only when integrity passes.
+
+
 
 ### 27.2 Illustrative output shape
 
@@ -2314,7 +2547,11 @@ Verbose demo mode SHOULD show a concise recovery story:
 [live] gap closed
 ```
 
+
+
 ## 28. Known limitations and honest claims
+
+
 
 ### 28.1 Data and market limitations
 
@@ -2324,6 +2561,8 @@ Verbose demo mode SHOULD show a concise recovery story:
 - It maintains displayed order state for selected symbols, not every market product by default.
 - It does not model hidden liquidity, matching, positions, or trading decisions.
 
+
+
 ### 28.2 Network limitations
 
 - Loopback multicast does not reproduce exchange colocation networks.
@@ -2331,6 +2570,8 @@ Verbose demo mode SHOULD show a concise recovery story:
 - It does not model switch queueing, NIC hardware timestamps, PTP, or physical packet loss.
 - The recovery cache is bounded and cannot recover arbitrarily old messages.
 - The MVP uses one multicast channel and one re-request server.
+
+
 
 ### 28.3 Performance limitations
 
@@ -2341,6 +2582,8 @@ Verbose demo mode SHOULD show a concise recovery story:
 - A single-thread baseline is intentional.
 - No kernel-bypass claim is permitted.
 
+
+
 ### 28.4 Verification limitations
 
 - Matching direct and recovered digests proves transport/recovery equivalence under a shared C++ decoder.
@@ -2348,7 +2591,11 @@ Verbose demo mode SHOULD show a concise recovery story:
 - Golden field tests and the independent Python fixture oracle mitigate common-mode decoder errors.
 - A non-cryptographic state digest can theoretically collide, so small fixtures compare exact canonical state too.
 
+
+
 ## 29. Design tradeoffs
+
+
 
 ### 29.1 Message-level pending store versus packet-level reorder buffer
 
@@ -2448,22 +2695,28 @@ Date:
 ## Documentation changes
 ```
 
+
+
 ## 31. Requirement traceability
 
-| Requirement area | Primary phase | Primary test layer |
-|---|---|---|
-| Input framing | Phase 4 | Unit and direct replay integration |
-| Endian primitives | Phase 1 | Unit |
-| ITCH decoding | Phase 2 | Golden unit and Python oracle |
-| Book semantics | Phase 3 | Unit and invariant tests |
-| Mold framing | Phase 5 | Golden unit and clean integration |
-| Multicast transport | Phase 5 | Integration |
-| Gap detection | Phase 6 | Sequencer unit and integration |
-| Re-request recovery | Phase 6 | Integration |
-| Duplicate and reorder behavior | Phase 7 | Unit and integration |
-| Bounds and failure policy | Phase 7 | Failure matrix |
-| Metrics and performance | Phase 8 | Benchmark harness |
-| Fresh-clone demonstration | Phase 8 | Demo script and release check |
+
+| Requirement area               | Primary phase | Primary test layer                 |
+| ------------------------------ | ------------- | ---------------------------------- |
+| Input framing                  | Phase 4       | Unit and direct replay integration |
+| Endian primitives              | Phase 1       | Unit                               |
+| ITCH decoding                  | Phase 2       | Golden unit and Python oracle      |
+| Book semantics                 | Phase 3       | Unit and invariant tests           |
+| Mold framing                   | Phase 5       | Golden unit and clean integration  |
+| Multicast transport            | Phase 5       | Integration                        |
+| Gap detection                  | Phase 6       | Sequencer unit and integration     |
+| Re-request recovery            | Phase 6       | Integration                        |
+| Duplicate and reorder behavior | Phase 7       | Unit and integration               |
+| Bounds and failure policy      | Phase 7       | Failure matrix                     |
+| Metrics and performance        | Phase 8       | Benchmark harness                  |
+| Fresh-clone demonstration      | Phase 8       | Demo script and release check      |
+
+
+
 
 ## 32. Example end-to-end event trace
 
@@ -2508,21 +2761,23 @@ seq 504: D order=9001
 State transitions:
 
 1. After 500:
-   - Order 9001 remaining 100 at 187.4325.
-   - Bid level 187.4325 has 100 shares and 1 order.
+  - Order 9001 remaining 100 at 187.4325.
+  - Bid level 187.4325 has 100 shares and 1 order.
 2. After 501:
-   - Bid level 187.4325 has 150 shares and 2 orders.
+  - Bid level 187.4325 has 150 shares and 2 orders.
 3. After 502:
-   - Order 9001 remaining 60.
-   - Bid level 187.4325 has 110 shares and 2 orders.
+  - Order 9001 remaining 60.
+  - Bid level 187.4325 has 110 shares and 2 orders.
 4. After 503:
-   - Order 9002 no longer exists.
-   - Bid level 187.4325 has 60 shares and 1 order.
-   - New order 9010 has 70 shares at 187.4300.
+  - Order 9002 no longer exists.
+  - Bid level 187.4325 has 60 shares and 1 order.
+  - New order 9010 has 70 shares at 187.4300.
 5. After 504:
-   - Order 9001 removed.
-   - Price level 187.4325 removed.
-   - Best bid becomes 187.4300 with 70 shares.
+  - Order 9001 removed.
+  - Price level 187.4325 removed.
+  - Best bid becomes 187.4300 with 70 shares.
+
+
 
 ## 34. Final implementation rules
 
