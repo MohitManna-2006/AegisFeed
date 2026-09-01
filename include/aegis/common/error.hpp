@@ -39,6 +39,9 @@ enum class ErrorCode : std::uint16_t {
     InvalidRequestedSymbol = 13,
     InvalidStockSymbol = 14,
     ConflictingStockLocate = 15,
+    InvalidAddOrder = 16,
+    DuplicateOrderReference = 17,
+    BookArithmeticOverflow = 18,
 };
 
 struct Error {
@@ -315,6 +318,55 @@ struct Error {
             stock_locate,
             stock_locate,
             "stock locate is already mapped to a different symbol",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error invalid_add_order(
+        const std::string_view reason,
+        const std::uint64_t observed_value = 0,
+        const std::uint64_t limit_value = 0) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::InvalidAddOrder,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
+        };
+    }
+
+    [[nodiscard]] static constexpr Error duplicate_order_reference(
+        const std::uint64_t order_reference) noexcept
+    {
+        return Error{
+            ErrorCategory::BookInvariant,
+            ErrorCode::DuplicateOrderReference,
+            0,
+            0,
+            0,
+            order_reference,
+            0,
+            "order reference is already active",
+        };
+    }
+
+    [[nodiscard]] static constexpr Error book_arithmetic_overflow(
+        const std::string_view reason,
+        const std::uint64_t observed_value,
+        const std::uint64_t limit_value) noexcept
+    {
+        return Error{
+            ErrorCategory::ResourceLimit,
+            ErrorCode::BookArithmeticOverflow,
+            0,
+            0,
+            0,
+            observed_value,
+            limit_value,
+            reason,
         };
     }
 };

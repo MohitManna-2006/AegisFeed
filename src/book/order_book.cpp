@@ -119,6 +119,114 @@ std::optional<Price4> OrderBook::best_ask() const noexcept
     return asks_.begin()->first;
 }
 
+std::optional<OrderRecord> OrderBook::order(const OrderId order_id) const noexcept
+{
+    const auto found = active_orders_.find(order_id);
+    if (found == active_orders_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+std::optional<PriceLevel> OrderBook::bid_level(const Price4 price) const noexcept
+{
+    const auto found = bids_.find(price);
+    if (found == bids_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+std::optional<PriceLevel> OrderBook::ask_level(const Price4 price) const noexcept
+{
+    const auto found = asks_.find(price);
+    if (found == asks_.end()) {
+        return std::nullopt;
+    }
+    return found->second;
+}
+
+Result<void> OrderBook::add(const AddOrder& message)
+{
+    if (message.header.stock_locate != stock_locate_) {
+        return Result<void>::failure(Error::invalid_add_order(
+            "add stock locate does not match containing book",
+            message.header.stock_locate,
+            stock_locate_));
+    }
+    if (message.side != Side::Buy && message.side != Side::Sell) {
+        return Result<void>::failure(Error::invalid_add_order(
+            "add order has an invalid side",
+            static_cast<std::uint8_t>(message.side),
+            0));
+    }
+    if (message.shares == 0) {
+        return Result<void>::failure(
+            Error::invalid_add_order("add order must have positive shares", 0, 1));
+    }
+    if (message.price_1e4 > kMaxPrice4) {
+        return Result<void>::failure(Error::invalid_add_order(
+            "add order price exceeds the supported Price4 range",
+            message.price_1e4,
+            kMaxPrice4));
+    }
+    if (active_orders_.contains(message.order_reference)) {
+        return Result<void>::failure(
+            Error::duplicate_order_reference(message.order_reference));
+    }
+
+    const OrderRecord record{
+        message.order_reference,
+        static_cast<StockLocate>(message.header.stock_locate),
+        message.side,
+        message.price_1e4,
+        message.shares,
+        message.attribution.value_or(Attribution{}),
+        message.attribution.has_value(),
+    };
+
+    const auto add_to_side = [&](auto& levels) -> Result<void> {
+        const auto existing = levels.find(message.price_1e4);
+        if (existing != levels.end()) {
+            if (message.shares >
+                std::numeric_limits<std::uint64_t>::max() -
+                    existing->second.aggregate_shares) {
+                return Result<void>::failure(Error::book_arithmetic_overflow(
+                    "adding shares would overflow the price-level aggregate",
+                    message.shares,
+                    std::numeric_limits<std::uint64_t>::max() -
+                        existing->second.aggregate_shares));
+            }
+            if (existing->second.order_count ==
+                std::numeric_limits<std::uint32_t>::max()) {
+                return Result<void>::failure(Error::book_arithmetic_overflow(
+                    "adding an order would overflow the price-level order count",
+                    existing->second.order_count,
+                    std::numeric_limits<std::uint32_t>::max()));
+            }
+
+            active_orders_.emplace(message.order_reference, record);
+            existing->second.aggregate_shares += static_cast<std::uint64_t>(message.shares);
+            ++existing->second.order_count;
+            return Result<void>::success();
+        }
+
+        active_orders_.emplace(message.order_reference, record);
+        levels.emplace(
+            message.price_1e4,
+            PriceLevel{static_cast<std::uint64_t>(message.shares), 1});
+        return Result<void>::success();
+    };
+
+    auto result = message.side == Side::Buy ? add_to_side(bids_) : add_to_side(asks_);
+    if (!result) {
+        return result;
+    }
+
+    debug_validate_invariants();
+    return Result<void>::success();
+}
+
 Result<void> OrderBook::validate_invariants() const noexcept
 {
     const auto bid_result = validate_levels(bids_, active_orders_, Side::Buy);
