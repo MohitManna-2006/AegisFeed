@@ -2,6 +2,7 @@
 
 #include "aegis/common/error.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
@@ -571,6 +572,39 @@ Result<void> OrderBook::replace(const OrderReplace& message)
         return replace_on_side(asks_);
     }
     return invariant_failure("active order has an invalid side");
+}
+
+CanonicalOrderBook OrderBook::canonical_snapshot() const
+{
+    CanonicalOrderBook snapshot;
+    snapshot.stock_locate = stock_locate_;
+    snapshot.bids.reserve(bids_.size());
+    snapshot.asks.reserve(asks_.size());
+    snapshot.orders.reserve(active_orders_.size());
+
+    for (const auto& [price, level] : bids_) {
+        snapshot.bids.push_back(
+            CanonicalPriceLevel{price, level.aggregate_shares, level.order_count});
+    }
+    for (const auto& [price, level] : asks_) {
+        snapshot.asks.push_back(
+            CanonicalPriceLevel{price, level.aggregate_shares, level.order_count});
+    }
+    for (const auto& [order_id, order] : active_orders_) {
+        static_cast<void>(order_id);
+        snapshot.orders.push_back(CanonicalOrder{
+            order.id,
+            order.stock_locate,
+            order.side,
+            order.price,
+            order.remaining,
+            order.attribution,
+            order.has_attribution,
+        });
+    }
+
+    std::ranges::sort(snapshot.orders, {}, &CanonicalOrder::id);
+    return snapshot;
 }
 
 Result<void> OrderBook::validate_invariants() const noexcept

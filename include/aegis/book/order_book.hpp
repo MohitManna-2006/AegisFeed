@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 namespace aegis {
 
@@ -29,6 +30,35 @@ struct OrderRecord {
 struct PriceLevel {
     std::uint64_t aggregate_shares{};
     std::uint32_t order_count{};
+};
+
+struct CanonicalPriceLevel {
+    Price4 price{};
+    std::uint64_t aggregate_shares{};
+    std::uint32_t order_count{};
+
+    [[nodiscard]] bool operator==(const CanonicalPriceLevel&) const = default;
+};
+
+struct CanonicalOrder {
+    OrderId id{};
+    StockLocate stock_locate{};
+    Side side{};
+    Price4 price{};
+    Shares remaining{};
+    Attribution attribution{};
+    bool has_attribution{};
+
+    [[nodiscard]] bool operator==(const CanonicalOrder&) const = default;
+};
+
+struct CanonicalOrderBook {
+    StockLocate stock_locate{};
+    std::vector<CanonicalPriceLevel> bids{};
+    std::vector<CanonicalPriceLevel> asks{};
+    std::vector<CanonicalOrder> orders{};
+
+    [[nodiscard]] bool operator==(const CanonicalOrderBook&) const = default;
 };
 
 class OrderBook {
@@ -58,6 +88,7 @@ public:
     [[nodiscard]] Result<void> delete_order(const OrderDelete& message);
     [[nodiscard]] Result<void> replace(const OrderReplace& message);
 
+    [[nodiscard]] CanonicalOrderBook canonical_snapshot() const;
     [[nodiscard]] Result<void> validate_invariants() const noexcept;
 
 private:

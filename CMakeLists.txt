@@ -21,6 +21,7 @@ add_library(
     aegis_core STATIC
     src/book/book_store.cpp
     src/book/order_book.cpp
+    src/book/state_digest.cpp
     src/book/symbol_directory.cpp
     src/common/core.cpp
     src/itch/itch_decoder.cpp
@@ -120,4 +121,11 @@ if(BUILD_TESTING)
     aegis_enable_sanitizers(aegis_book_store_test)
 
     add_test(NAME aegis.book_store COMMAND aegis_book_store_test)
+
+    add_executable(aegis_state_digest_test tests/unit/state_digest_test.cpp)
+    target_link_libraries(aegis_state_digest_test PRIVATE AegisFeed::core)
+    aegis_enable_compiler_warnings(aegis_state_digest_test)
+    aegis_enable_sanitizers(aegis_state_digest_test)
+
+    add_test(NAME aegis.state_digest COMMAND aegis_state_digest_test)
 endif()

@@ -8,14 +8,29 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace aegis {
 
 enum class BookRouteStatus : std::uint8_t {
     Applied,
     KnownUnselected,
+};
+
+struct CanonicalBook {
+    std::string symbol{};
+    CanonicalOrderBook book{};
+
+    [[nodiscard]] bool operator==(const CanonicalBook&) const = default;
+};
+
+struct CanonicalBookStore {
+    std::vector<CanonicalBook> books{};
+
+    [[nodiscard]] bool operator==(const CanonicalBookStore&) const = default;
 };
 
 class BookStore {
@@ -32,6 +47,8 @@ public:
     [[nodiscard]] Result<BookRouteStatus> cancel(const OrderCancel& message);
     [[nodiscard]] Result<BookRouteStatus> delete_order(const OrderDelete& message);
     [[nodiscard]] Result<BookRouteStatus> replace(const OrderReplace& message);
+
+    [[nodiscard]] Result<CanonicalBookStore> canonical_snapshot() const;
 
     [[nodiscard]] std::size_t book_count() const noexcept;
     [[nodiscard]] bool has_book(StockLocate stock_locate) const noexcept;

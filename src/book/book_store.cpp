@@ -2,6 +2,7 @@
 
 #include "aegis/common/error.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -166,6 +167,40 @@ Result<OrderBook*> BookStore::resolve_book(const StockLocate stock_locate)
             "selected stock locate has no owned order book", stock_locate, 0));
     }
     return Result<OrderBook*>::success(&selected_book->second);
+}
+
+Result<CanonicalBookStore> BookStore::canonical_snapshot() const
+{
+    CanonicalBookStore snapshot;
+    snapshot.books.reserve(books_by_locate_.size());
+
+    for (const auto& [stock_locate, book] : books_by_locate_) {
+        const auto validity = book.validate_invariants();
+        if (!validity) {
+            return Result<CanonicalBookStore>::failure(*validity.error());
+        }
+        if (book.stock_locate() != stock_locate) {
+            return Result<CanonicalBookStore>::failure(Error::book_invariant_violation(
+                "owned book key does not match book stock locate",
+                book.stock_locate(),
+                stock_locate));
+        }
+        if (!symbol_directory_.is_selected(stock_locate)) {
+            return Result<CanonicalBookStore>::failure(Error::book_invariant_violation(
+                "owned book stock locate is not selected", stock_locate, 0));
+        }
+
+        auto symbol = symbol_directory_.symbol_for(stock_locate);
+        if (!symbol.has_value()) {
+            return Result<CanonicalBookStore>::failure(Error::book_invariant_violation(
+                "owned book stock locate has no directory symbol", stock_locate, 0));
+        }
+        snapshot.books.push_back(
+            CanonicalBook{std::move(*symbol), book.canonical_snapshot()});
+    }
+
+    std::ranges::sort(snapshot.books, {}, &CanonicalBook::symbol);
+    return Result<CanonicalBookStore>::success(std::move(snapshot));
 }
 
 std::size_t BookStore::book_count() const noexcept
